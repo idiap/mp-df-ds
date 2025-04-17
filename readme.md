@@ -1,9 +1,8 @@
 # From Movement Primitives to Distance Fields to Dynamical Systems
 
-[📄 Paper][https://arxiv.org/pdf/2504.09705] | [🌐 Interactive Webpage][https://mp-df-ds.github.io/]
+[📄 Paper](https://arxiv.org/pdf/2504.09705) | [🌐 Interactive Webpage](https://mp-df-ds.github.io/)
 
 ---
-
 **A simple module to represent trajectories using quadratic splines, enabling smooth transitions from movement primitives to distance fields and dynamical systems—all with analytical gradients and PyTorch support.**
 
 ---
