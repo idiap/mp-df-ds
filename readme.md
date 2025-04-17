@@ -37,7 +37,7 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 | `run_mp_df_ds.py` | Example: Convert a quadratic spline into distance field, and dynamical system |
 | `run_single_traj.py` | Similar to above, but for a trajectory that represented using discrete points|
 | `run_multiple_traj.py` | Combine and fuse multiple trajectories |
-| `run_LASA.py` | Run experiments on the LASA dataset (requires `pylasadataset`) 
+| `run_LASA.py` | Run experiments on the LASA dataset (requires [pylasadataset](https://github.com/justagist/pyLasaDataset)) 
 ---
 
 
