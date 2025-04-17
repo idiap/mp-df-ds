@@ -25,7 +25,8 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 - ✅ Minimal dependencies (built with **PyTorch**, no heavy libraries needed)
 - ✅ Fully vectorized and **parallelizable**
 - ✅ Supports **gradient-based learning**, **optimization**, and **control**
-- ✅ Easy to use
+- ✅ **Efficient** computation
+
 
 
 ## 📂 Project Structure
@@ -39,4 +40,6 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 | `run_multiple_traj.py` | Combine and fuse multiple trajectories |
 | `run_LASA.py` | Run experiments on the LASA dataset (requires `pylasadataset`) 
 ---
+
+
 
