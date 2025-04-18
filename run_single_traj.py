@@ -9,13 +9,14 @@ import torch
 import matplotlib.pyplot as plt
 from quadratic_spline import QuadraticSpline,dynamical_system_single_step
 import numpy as np
+import os
 
 if __name__ == "__main__":
     device = 'cuda'
     curve = QuadraticSpline(nbFct=3, nbSeg=10,device=device)
 
     # Create a trajectory concatenating two letters
-    data_dir = ""
+    data_dir = os.path.join(os.path.dirname(__file__), "data/")
     CShape = np.load(data_dir + "S.npy", allow_pickle="True")
     CShape = torch.from_numpy(CShape).to(device)
     pos,vel,acc = CShape[0,:,:2],CShape[0,:,2:4],CShape[0,:,4:]
