@@ -42,3 +42,9 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 
 
 
+
+--------------------------------------------------------
+
+This code is maintained by Yiming LI and licensed under the MIT License.
+
+Copyright (c) 2025 Idiap Research Institute <contact@idiap.ch>
