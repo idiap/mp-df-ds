@@ -7,7 +7,7 @@
 
 ---
 
-## ✨ What is this?
+## What is this?
 
 This project provides a simple and lightweight implementation to convert a trajectory into:
 
@@ -19,16 +19,20 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 - ✅ Minimal dependencies (built with **PyTorch**, no heavy libraries needed)
 - ✅ Fully vectorized and **parallelizable**
 - ✅ Supports **gradient-based learning**, **optimization**, and **control**
 - ✅ **Efficient** computation
 
+## Requirements
 
+- pytorch
+- numpy
+- matplotlib
 
-## 📂 Project Structure
+## Project Structure
 
 | File | Description |
 |------|-------------|
