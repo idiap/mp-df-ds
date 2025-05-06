@@ -29,8 +29,20 @@
         }
         canvas {
             border: 1px solid #000;
-            background-color: white;
             cursor: move;
+        }
+        #curveCanvas {
+            background-color: white;
+        }
+        .dynamical-plots {
+            position: relative;
+            width: 400px;
+            height: 400px;
+        }
+        .dynamical-plots canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
         }
         h1 {
             color: #333;
@@ -173,6 +185,8 @@
             height: 20px;
         }
     </style>
+
+    <script src="glslrenderer.js" type="text/javascript"></script>
 </head>
 <body>
     <h1>From Movement Primitive to Distance Field to Dynamical System</h1>
@@ -214,7 +228,10 @@
         </div>
         <div class="plot-container">
             <h3>Dynamical System</h3>
-            <canvas id="dynamicalCanvas" width="400" height="400"></canvas>
+            <div class="dynamical-plots">
+                <canvas id="flowfieldcanvas" width="400" height="400"></canvas>
+                <canvas id="dynamicalCanvas" width="400" height="400"></canvas>
+            </div>
             <div class="control-bar">
                 <label for="lambdaSlider">Lambda (λ):</label>
                 <input type="range" id="lambdaSlider" min="0.5" max="20" step="0.1" value="10.0">
@@ -228,7 +245,7 @@
         <p><strong>Click and drag</strong> on the distance field to see the closest point and gradient vector.</p>
     </div> -->
 
-    <script id="fragmentShader" type="x-shader/x-fragment">
+    <script id="distanceFieldFragmentShader" type="x-shader/x-fragment">
         precision highp float;
         
         uniform vec2 p0;
@@ -315,21 +332,6 @@
         // Simplified distance-only function
         float sdBezier(vec2 pos, vec2 A, vec2 B, vec2 C) {
             return sdBezierWithT(pos, A, B, C).x;
-        }
-        
-        // Get analytical gradient at a point
-        vec2 getBezierGradient(vec2 pos, vec2 A, vec2 B, vec2 C) {
-            // Find the closest point on the curve
-            vec3 closestInfo = sdBezierWithT(pos, A, B, C);
-            float t = closestInfo.y;
-            
-            // Get the closest point on the curve
-            vec2 closestPoint = evaluateBezier(A, B, C, t);
-            
-            // The gradient points from the query point to the closest point on the curve
-            vec2 gradient = normalize(closestPoint - pos);
-            
-            return gradient;
         }
         
         // Function to compute minimum distance to two quadratic Bezier curves
@@ -454,6 +456,256 @@
         
         void main() {
             mainImage(gl_FragColor, gl_FragCoord.xy);
+        }
+    </script>
+
+    <script id="flowfield-fragment-shader" type="shader">
+        precision mediump float;
+
+        uniform vec2 p0;
+        uniform vec2 p1;
+        uniform vec2 p2;
+        uniform vec2 p3;
+        uniform vec2 p4;
+        uniform float lambda;
+
+        // Quadratic bezier evaluation
+        vec2 evaluateBezier(vec2 A, vec2 B, vec2 C, float t) {
+            float t1 = 1.0 - t;
+            return t1*t1*A + 2.0*t1*t*B + t*t*C;
+        }
+
+        // Signed distance to quadratic bezier curve with analytical gradient
+        // Returns vec3(distance, closest_t, is_valid)
+        vec3 sdBezierWithT(vec2 pos, vec2 A, vec2 B, vec2 C) {
+            vec2 a = B - A;
+            vec2 b = A - 2.0*B + C;
+            vec2 c = a * 2.0;
+            vec2 d = A - pos;
+            
+            float kk = 1.0 / dot(b,b);
+            float kx = kk * dot(a,b);
+            float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
+            float kz = kk * dot(d,a);
+            
+            float res = 0.0;
+            float t_res = 0.0;
+            bool valid = true;
+            
+            float p = ky - kx*kx;
+            float p3 = p*p*p;
+            float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
+            float h = q*q + 4.0*p3;
+            
+            if(h >= 0.0) {
+                h = sqrt(h);
+                vec2 x = (vec2(h, -h) - q) / 2.0;
+                vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0));
+                float t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
+                t_res = t;
+                vec2 q = d + (c + b*t)*t;
+                res = dot(q,q);
+            } else {
+                float z = sqrt(-p);
+                float v = acos(q/(p*z*2.0)) / 3.0;
+                float m = cos(v);
+                float n = sin(v)*1.732050808;
+                vec3 t = clamp(vec3(m + m, -n - m, n - m) * z - kx, 0.0, 1.0);
+                
+                vec2 qx = d + (c + b*t.x)*t.x;
+                float dx = dot(qx, qx);
+                
+                vec2 qy = d + (c + b*t.y)*t.y;
+                float dy = dot(qy, qy);
+                
+                vec2 qz = d + (c + b*t.z)*t.z;
+                float dz = dot(qz, qz);
+                
+                // Find minimum
+                float min_d = dx;
+                t_res = t.x;
+                
+                if(dy < min_d) {
+                    min_d = dy;
+                    t_res = t.y;
+                }
+                
+                if(dz < min_d) {
+                    min_d = dz;
+                    t_res = t.z;
+                }
+                
+                res = min_d;
+            }
+            
+            return vec3(sqrt(res), t_res, valid ? 1.0 : 0.0);
+        }
+
+        // Function to calculate curve gradient tangent at parameter t
+        vec2 getCurveGradientTangent(vec2 A, vec2 B, vec2 C, float t) {
+            // If we're at the end point (t = 1), return zero gradient
+            if (abs(t - 1.0) < 0.001) {
+                return vec2(0.0, 0.0);
+            }
+
+            // First derivative of quadratic Bezier curve
+            // B(t) = (1-t)²A + 2(1-t)tB + t²C
+            // B'(t) = -2(1-t)A + 2(1-2t)B + 2tC
+            vec2 tangent = vec2(
+                -2.0 * (1.0 - t) * A.x + 2.0 * (1.0 - 2.0 * t) * B.x + 2.0 * t * C.x,
+                -2.0 * (1.0 - t) * A.y + 2.0 * (1.0 - 2.0 * t) * B.y + 2.0 * t * C.y
+            );
+            
+            // Normalize the tangent vector
+            return normalize(tangent);
+        }
+
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            // Normalized pixel coordinates (from 0 to 1)
+            vec2 uv = fragCoord / iResolution.xy;
+            
+            // Find the closest point on both curves
+            vec3 closestInfo1 = sdBezierWithT(uv, p0, p1, p2);
+            vec3 closestInfo2 = sdBezierWithT(uv, p2, p3, p4);
+            
+            // Use the closer one
+            vec3 closestInfo = closestInfo1.x < closestInfo2.x ? closestInfo1 : closestInfo2;
+            float t_param = closestInfo.y;
+            
+            // Get curve gradient tangent based on closest segment
+            vec2 curveGradientTangent = closestInfo1.x < closestInfo2.x ?
+                getCurveGradientTangent(p0, p1, p2, t_param) :
+                getCurveGradientTangent(p2, p3, p4, t_param);
+
+            // Get dynamical system gradient (distance gradient)
+            vec2 closestPoint = closestInfo1.x < closestInfo2.x ?
+                evaluateBezier(p0, p1, p2, t_param) :
+                evaluateBezier(p2, p3, p4, t_param);
+            
+            vec2 dynGradient = normalize(closestPoint - uv);
+
+            // Check if we're at the end point
+            float distToEnd = length(uv - p4);
+            
+            // Calculate beta and alpha based on distance
+            float beta = 1.0 / (1.0 + lambda * closestInfo.x);
+            float alpha = 1.0 - beta;
+            
+            // If we're very close to the end point, only use distance gradient
+            if (distToEnd < 0.01) {
+                beta = 0.0;
+                alpha = 1.0;
+            }
+            
+            // Combine the gradients
+            vec2 gradient = vec2(
+                -alpha * (-dynGradient.x) + beta * curveGradientTangent.x,
+                -alpha * (-dynGradient.y) + beta * curveGradientTangent.y
+            );
+            
+            // Normalize the combined vector
+            gradient = normalize(gradient);
+
+            fragColor = vec4(gradient, 0.0, 0.0);
+        }
+    </script>
+
+    <script id="lic-fragment-shader" type="shader">
+        precision mediump float;
+
+        // Constants
+        const int nbIterations = 32;
+
+        float hash12(vec2 p)
+        {
+            vec3 p3  = fract(vec3(p.xyx) * .1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+        }
+
+        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        {
+            vec2 uv = fragCoord.xy / iResolution.xy;
+
+            vec2 uvUnit = 1.0 / (iResolution.xy * 4.0);
+
+            vec2 dir = texture(iChannel1, uv).xy;
+
+            vec2 pos = (fragCoord.xy + iTime / 1000.0);
+            vec3 color = vec3(hash12(pos.xy));
+
+            for (int i = 0; i < nbIterations; i++)
+                color += texture(iChannel0, uv - dir * uvUnit * float(i + 4)).rrr;
+
+            color /= float(nbIterations) + 1.0;
+
+            fragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <script id="flowfield-main-fragment-shader" type="shader">
+        precision mediump float;
+
+        // Constants
+        const float pi = 3.1415926538;
+        const float inc = 2.0 * pi / 6.0;
+
+        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        {
+            vec2 uv = fragCoord.xy / iResolution.xy;
+
+            vec3 color = texture(iChannel0, uv).rgb;
+            color = clamp((color - 0.49) * 5.0 + 0.49, 0.0, 1.0);
+
+            vec2 dir = texture(iChannel1, uv).rg;
+            float angle = atan(dir.y, dir.x);
+
+            vec3 start;
+            vec3 end;
+
+            if (angle < -pi + inc)
+            {
+                start = vec3(0.9, 0.1, 0.1);
+                end = vec3(0.9, 0.9, 0.1);
+                angle = (angle + pi) / inc;
+            }
+            else if (angle < -pi + 2.0 * inc)
+            {
+                start = vec3(0.9, 0.9, 0.1);
+                end = vec3(0.1, 0.9, 0.1);
+                angle = (angle + pi - inc) / inc;
+            }
+            else if (angle < -pi + 3.0 * inc)
+            {
+                start = vec3(0.1, 0.9, 0.1);
+                end = vec3(0.1, 0.9, 0.9);
+                angle = (angle + pi - 2.0 * inc) / inc;
+            }
+            else if (angle < -pi + 4.0 * inc)
+            {
+                start = vec3(0.1, 0.9, 0.9);
+                end = vec3(0.1, 0.1, 0.9);
+                angle = (angle + pi - 3.0 * inc) / inc;
+            }
+            else if (angle < -pi + 5.0 * inc)
+            {
+                start = vec3(0.1, 0.1, 0.9);
+                end = vec3(0.9, 0.1, 0.9);
+                angle = (angle + pi - 4.0 * inc) / inc;
+            }
+            else
+            {
+                start = vec3(0.9, 0.1, 0.9);
+                end = vec3(0.9, 0.1, 0.1);
+                angle = (angle + pi - 5.0 * inc) / inc;
+            }
+
+            color.r += mix(start.r, end.r, angle) * 0.4;
+            color.g += mix(start.g, end.g, angle) * 0.4;
+            color.b += mix(start.b, end.b, angle) * 0.4;
+
+            fragColor = vec4(color, 1.0);
         }
     </script>
 
@@ -874,7 +1126,7 @@
         }
         
         // Create shader program
-        const fragmentShaderSource = document.getElementById('fragmentShader').text;
+        const fragmentShaderSource = document.getElementById('distanceFieldFragmentShader').text;
         const vertexShaderSource = `
             attribute vec2 aPosition;
             void main() {
@@ -930,6 +1182,32 @@
         const clickPosition = { x: 0.5, y: 0.5 };
         let showGradient = false;
         let isDraggingGradientPoint = false;
+
+
+        // Start the flowfield rendering
+        const renderer = new GlslRenderer(document.querySelector("#flowfieldcanvas"));
+
+        // Flowfield shader
+        let flowfieldRenderTarget = renderer.createRenderTarget();
+        flowfieldRenderTarget.setUniform('p0', [controlPoints[0].x, controlPoints[0].y]);
+        flowfieldRenderTarget.setUniform('p1', [controlPoints[1].x, controlPoints[1].y]);
+        flowfieldRenderTarget.setUniform('p2', [controlPoints[2].x, controlPoints[2].y]);
+        flowfieldRenderTarget.setUniform('p3', [controlPoints[3].x, controlPoints[3].y]);
+        flowfieldRenderTarget.setUniform('p4', [controlPoints[4].x, controlPoints[4].y]);
+        flowfieldRenderTarget.setUniform('lambda', 10.0);
+        flowfieldRenderTarget.setup(document.querySelector("#flowfield-fragment-shader").text);
+
+        // LIC shader
+        let licRenderTarget = renderer.createRenderTarget();
+        licRenderTarget.setup(document.querySelector("#lic-fragment-shader").text);
+        licRenderTarget.setTextureFromRenderTarget("iChannel0", licRenderTarget);
+        licRenderTarget.setTextureFromRenderTarget("iChannel1", flowfieldRenderTarget);
+
+        // Main shader
+        renderer.setup(document.querySelector("#flowfield-main-fragment-shader").text);
+        renderer.setTextureFromRenderTarget("iChannel0", licRenderTarget);
+        renderer.setTextureFromRenderTarget("iChannel1", flowfieldRenderTarget);
+
         
         // Function to convert normalized coordinates to canvas pixels
         function toCanvasCoords(point) {
@@ -961,6 +1239,7 @@
         function updateAll() {
             drawBezierCurve();
             updateDistanceField();
+            updateFlowField();
             // Recompute trajectory before drawing dynamical system
             trajectory = computeTrajectory(streamPoint);
             drawDynamicalSystem();
@@ -1060,6 +1339,18 @@
             
             // Draw
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        // Function to update flow field
+        function updateFlowField() {
+            flowfieldRenderTarget.setUniform('p0', [controlPoints[0].x, controlPoints[0].y]);
+            flowfieldRenderTarget.setUniform('p1', [controlPoints[1].x, controlPoints[1].y]);
+            flowfieldRenderTarget.setUniform('p2', [controlPoints[2].x, controlPoints[2].y]);
+            flowfieldRenderTarget.setUniform('p3', [controlPoints[3].x, controlPoints[3].y]);
+            flowfieldRenderTarget.setUniform('p4', [controlPoints[4].x, controlPoints[4].y]);
+
+            const lambda = parseFloat(document.getElementById('lambdaSlider').value);
+            flowfieldRenderTarget.setUniform('lambda', lambda);
         }
         
         // Function to draw dynamical system field
