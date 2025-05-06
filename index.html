@@ -42,25 +42,6 @@
             padding: 15px;
             border-radius: 5px;
         }
-        .color-legend {
-            width: 380px;
-            height: 20px;
-            margin: 10px 0;
-            background: linear-gradient(to right, 
-                #000764, #0c2c84, #225ea8, #1d91c0, 
-                #41b6c4, #7fcdbb, #c7e9b4, #ffffcc, 
-                #ffeda0, #feb24c, #fd8d3c, #fc4e2a, 
-                #e31a1c, #b10026, #800026);
-            border-radius: 3px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        }
-        .legend-labels {
-            display: flex;
-            justify-content: space-between;
-            width: 380px;
-            margin: 0 0 10px 0;
-            font-size: 12px;
-        }
         .control-bar {
             width: 380px;
             margin: 10px 0;
@@ -95,7 +76,7 @@
             border-radius: 5px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .plot-container:first-child .plot-description {
+        .plot-description.spaced {
             margin-top: 75px;  /* Increased margin to match height of other plots */
         }
         .gif-section {
@@ -224,17 +205,12 @@
         <div class="plot-container">
             <h3>Quadratic Bezier Curve (with 2 segments)</h3>
             <canvas id="curveCanvas" width="400" height="400"></canvas>
-            <p class="plot-description">A quadratic spline with two segments. The blue points are control points that shape the curve. The orange point marks the end of the curve. Drag any point to modify the curve while maintaining smoothness.</p>
+            <p class="plot-description spaced">A quadratic spline with two segments. The blue points are control points that shape the curve. The orange point marks the end of the curve. Drag any point to modify the curve while maintaining smoothness.</p>
         </div>
         <div class="plot-container">
             <h3>Distance Field</h3>
             <canvas id="distanceFieldCanvas" width="400" height="400"></canvas>
-            <div class="color-legend"></div>
-            <div class="legend-labels">
-                <span>Close</span>
-                <span>Far</span>
-            </div>
-            <p class="plot-description">Distance field of the quadratic bezier curve. Blue means close to the curve, red means far away. Click and drag to see the gradient direction at any point.</p>
+            <p class="plot-description spaced">Distance field of the quadratic bezier curve. Click and drag to see the gradient direction at any point.</p>
         </div>
         <div class="plot-container">
             <h3>Dynamical System</h3>
@@ -368,59 +344,6 @@
             return min(d1, d2);
         }
         
-        // Enhanced colormap with more layers
-        vec3 enhancedColorMap(float t) {
-            // 15-color palette inspired by scientific colormaps
-            const vec3 c1 = vec3(0.0, 0.027, 0.392);    // Deep blue
-            const vec3 c2 = vec3(0.047, 0.173, 0.516);  // Dark blue
-            const vec3 c3 = vec3(0.133, 0.369, 0.659);  // Medium blue
-            const vec3 c4 = vec3(0.114, 0.569, 0.753);  // Light blue
-            const vec3 c5 = vec3(0.255, 0.714, 0.767);  // Cyan
-            const vec3 c6 = vec3(0.498, 0.804, 0.733);  // Turquoise
-            const vec3 c7 = vec3(0.780, 0.914, 0.706);  // Light green
-            const vec3 c8 = vec3(1.0, 1.0, 0.8);        // Light yellow
-            const vec3 c9 = vec3(1.0, 0.931, 0.627);    // Pale yellow
-            const vec3 c10 = vec3(0.996, 0.698, 0.298); // Light orange
-            const vec3 c11 = vec3(0.992, 0.553, 0.235); // Medium orange
-            const vec3 c12 = vec3(0.988, 0.306, 0.164); // Dark orange
-            const vec3 c13 = vec3(0.890, 0.102, 0.110); // Red
-            const vec3 c14 = vec3(0.694, 0.0, 0.149);   // Dark red
-            const vec3 c15 = vec3(0.502, 0.0, 0.149);   // Maroon
-            
-            float normalized = clamp(t, 0.0, 1.0);
-            normalized = pow(normalized, 0.8); // Slightly emphasize lower values
-            
-            if (normalized < 1.0/14.0) {
-                return mix(c1, c2, normalized * 14.0);
-            } else if (normalized < 2.0/14.0) {
-                return mix(c2, c3, (normalized - 1.0/14.0) * 14.0);
-            } else if (normalized < 3.0/14.0) {
-                return mix(c3, c4, (normalized - 2.0/14.0) * 14.0);
-            } else if (normalized < 4.0/14.0) {
-                return mix(c4, c5, (normalized - 3.0/14.0) * 14.0);
-            } else if (normalized < 5.0/14.0) {
-                return mix(c5, c6, (normalized - 4.0/14.0) * 14.0);
-            } else if (normalized < 6.0/14.0) {
-                return mix(c6, c7, (normalized - 5.0/14.0) * 14.0);
-            } else if (normalized < 7.0/14.0) {
-                return mix(c7, c8, (normalized - 6.0/14.0) * 14.0);
-            } else if (normalized < 8.0/14.0) {
-                return mix(c8, c9, (normalized - 7.0/14.0) * 14.0);
-            } else if (normalized < 9.0/14.0) {
-                return mix(c9, c10, (normalized - 8.0/14.0) * 14.0);
-            } else if (normalized < 10.0/14.0) {
-                return mix(c10, c11, (normalized - 9.0/14.0) * 14.0);
-            } else if (normalized < 11.0/14.0) {
-                return mix(c11, c12, (normalized - 10.0/14.0) * 14.0);
-            } else if (normalized < 12.0/14.0) {
-                return mix(c12, c13, (normalized - 11.0/14.0) * 14.0);
-            } else if (normalized < 13.0/14.0) {
-                return mix(c13, c14, (normalized - 12.0/14.0) * 14.0);
-            } else {
-                return mix(c14, c15, (normalized - 13.0/14.0) * 14.0);
-            }
-        }
-        
         void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // Normalized pixel coordinates (from 0 to 1)
             vec2 uv = fragCoord / iResolution.xy;
@@ -429,21 +352,16 @@
             float d = sdTwoBeziers(uv, p0, p1, p2, p3, p4);
             
             // Scale the distance for better visualization
-            float scaledDistance = clamp(d * 5.0, 0.0, 1.0);
-            
+            float scaledDistance = float(int(d * 20.0)) / 10.0;
+
             // Apply enhanced color map
-            vec3 col = enhancedColorMap(scaledDistance);
-            
-            // Add grid
-            vec2 grid = abs(fract(uv * 10.0) - 0.5);
-            float gridLine = smoothstep(0.02, 0.0, max(grid.x, grid.y));
-            col = mix(col, vec3(0.8, 0.8, 0.8), gridLine * 0.3);
+            vec3 col = vec3(1, 1, 1) * scaledDistance;
             
             // Visualize the curves themselves
-            float lineWidth = 0.004;
+            float lineWidth = 0.008;
             float edge1 = smoothstep(lineWidth, 0.0, sdBezier(uv, p0, p1, p2));
             float edge2 = smoothstep(lineWidth, 0.0, sdBezier(uv, p2, p3, p4));
-            col = mix(col, vec3(0.0, 0.0, 0.0), max(edge1, edge2));
+            col = mix(col, vec3(1.0, 0.0, 0.0), max(edge1, edge2));
             
             // Show gradient vector if requested
             if (showGradient) {
@@ -496,7 +414,7 @@
                 vec2 normal = vec2(-tangent.y, tangent.x);  // Perpendicular to tangent
                 
                 // Draw normal vector
-                float gradLineLength = 0.08;
+                float gradLineLength = 0.05;
                 dir = normal;
                 
                 t_line = clamp(dot(uv - closestPoint, dir) / gradLineLength, 0.0, 1.0);
