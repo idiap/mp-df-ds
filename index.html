@@ -214,7 +214,7 @@
         </div>
         <div class="plot-container">
             <h3>Dynamical System</h3>
-            <canvas id="autonomousCanvas" width="400" height="400"></canvas>
+            <canvas id="dynamicalCanvas" width="400" height="400"></canvas>
             <div class="control-bar">
                 <label for="lambdaSlider">Lambda (λ):</label>
                 <input type="range" id="lambdaSlider" min="0.5" max="20" step="0.1" value="10.0">
@@ -848,9 +848,9 @@
         // Initialize canvas elements
         const curveCanvas = document.getElementById('curveCanvas');
         const distanceFieldCanvas = document.getElementById('distanceFieldCanvas');
-        const autonomousCanvas = document.getElementById('autonomousCanvas');
+        const dynamicalCanvas = document.getElementById('dynamicalCanvas');
         const curveCtx = curveCanvas.getContext('2d');
-        const autonomousCtx = autonomousCanvas.getContext('2d');
+        const dynamicalCtx = dynamicalCanvas.getContext('2d');
         
         // Initialize WebGL for distance field
         const gl = distanceFieldCanvas.getContext('webgl');
@@ -961,9 +961,9 @@
         function updateAll() {
             drawBezierCurve();
             updateDistanceField();
-            // Recompute trajectory before drawing autonomous system
+            // Recompute trajectory before drawing dynamical system
             trajectory = computeTrajectory(streamPoint);
-            drawAutonomousSystem();
+            drawDynamicalSystem();
         }
         
         // Function to draw the bezier curve
@@ -1062,51 +1062,51 @@
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
         
-        // Function to draw autonomous system field
-        function drawAutonomousSystem() {
-            const width = autonomousCanvas.width;
-            const height = autonomousCanvas.height;
+        // Function to draw dynamical system field
+        function drawDynamicalSystem() {
+            const width = dynamicalCanvas.width;
+            const height = dynamicalCanvas.height;
             
             // Get lambda value from slider
             const lambda = parseFloat(document.getElementById('lambdaSlider').value);
             
             // Clear canvas
-            autonomousCtx.clearRect(0, 0, width, height);
+            dynamicalCtx.clearRect(0, 0, width, height);
             
             // Draw bezier curves
-            autonomousCtx.strokeStyle = 'black';
-            autonomousCtx.lineWidth = 3;
+            dynamicalCtx.strokeStyle = 'black';
+            dynamicalCtx.lineWidth = 3;
             
             // First quadratic bezier curve (Q1, Q2, Q3)
-            autonomousCtx.beginPath();
+            dynamicalCtx.beginPath();
             const q1 = toCanvasCoords(controlPoints[0]);
             const q2 = toCanvasCoords(controlPoints[1]);
             const q3 = toCanvasCoords(controlPoints[2]);
             
-            autonomousCtx.moveTo(q1.x, q1.y);
+            dynamicalCtx.moveTo(q1.x, q1.y);
             
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
                 const y = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
                 const canvasCoords = toCanvasCoords({x, y});
-                autonomousCtx.lineTo(canvasCoords.x, canvasCoords.y);
+                dynamicalCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
-            autonomousCtx.stroke();
+            dynamicalCtx.stroke();
             
             // Second quadratic bezier curve (Q3, Q4, Q5)
-            autonomousCtx.beginPath();
+            dynamicalCtx.beginPath();
             const q4 = toCanvasCoords(controlPoints[3]);
             const q5 = toCanvasCoords(controlPoints[4]);
             
-            autonomousCtx.moveTo(q3.x, q3.y);
+            dynamicalCtx.moveTo(q3.x, q3.y);
             
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
                 const y = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
                 const canvasCoords = toCanvasCoords({x, y});
-                autonomousCtx.lineTo(canvasCoords.x, canvasCoords.y);
+                dynamicalCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
-            autonomousCtx.stroke();
+            dynamicalCtx.stroke();
             
             // Draw vector field
             const gridSizeVectors = 15;
@@ -1216,14 +1216,14 @@
                     // Draw the vector line with color based on distance
                     const red = alpha;  // More red when following distance gradient
                     const blue = beta;  // More blue when following curve gradient
-                    autonomousCtx.strokeStyle = `rgba(${red * 255}, 0, ${blue * 255}, 0.7)`;
-                    autonomousCtx.lineWidth = 2;
+                    dynamicalCtx.strokeStyle = `rgba(${red * 255}, 0, ${blue * 255}, 0.7)`;
+                    dynamicalCtx.lineWidth = 2;
                     
                     // Only draw the vector if it's not zero
                     if (length > 0) {
-                        autonomousCtx.beginPath();
-                        autonomousCtx.moveTo(centerX, centerY);
-                        autonomousCtx.lineTo(
+                        dynamicalCtx.beginPath();
+                        dynamicalCtx.moveTo(centerX, centerY);
+                        dynamicalCtx.lineTo(
                             centerX + combinedX * arrowLength,
                             centerY - combinedY * arrowLength
                         );
@@ -1232,76 +1232,76 @@
                         const arrowSize = 6;
                         const angle = Math.atan2(-combinedY, combinedX);
                         
-                        autonomousCtx.lineTo(
+                        dynamicalCtx.lineTo(
                             centerX + combinedX * arrowLength - arrowSize * Math.cos(angle - Math.PI/6),
                             centerY - combinedY * arrowLength - arrowSize * Math.sin(angle - Math.PI/6)
                         );
-                        autonomousCtx.moveTo(
+                        dynamicalCtx.moveTo(
                             centerX + combinedX * arrowLength,
                             centerY - combinedY * arrowLength
                         );
-                        autonomousCtx.lineTo(
+                        dynamicalCtx.lineTo(
                             centerX + combinedX * arrowLength - arrowSize * Math.cos(angle + Math.PI/6),
                             centerY - combinedY * arrowLength - arrowSize * Math.sin(angle + Math.PI/6)
                         );
                         
-                        autonomousCtx.stroke();
+                        dynamicalCtx.stroke();
                     }
                 }
             }
             
             // Draw trajectory if it exists
             if (trajectory.length > 0) {
-                autonomousCtx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
-                autonomousCtx.lineWidth = 2;
-                autonomousCtx.beginPath();
+                dynamicalCtx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+                dynamicalCtx.lineWidth = 2;
+                dynamicalCtx.beginPath();
                 
                 const start = toCanvasCoords(trajectory[0]);
-                autonomousCtx.moveTo(start.x, start.y);
+                dynamicalCtx.moveTo(start.x, start.y);
                 
                 for (let i = 1; i < trajectory.length; i++) {
                     const point = toCanvasCoords(trajectory[i]);
-                    autonomousCtx.lineTo(point.x, point.y);
+                    dynamicalCtx.lineTo(point.x, point.y);
                 }
                 
-                autonomousCtx.stroke();
+                dynamicalCtx.stroke();
                 
                 // Draw trajectory points
                 trajectory.forEach((point, index) => {
                     const canvasCoords = toCanvasCoords(point);
-                    autonomousCtx.fillStyle = `rgba(255, 0, 255, ${0.8 - index * 0.8 / trajectory.length})`;
-                    autonomousCtx.beginPath();
-                    autonomousCtx.arc(canvasCoords.x, canvasCoords.y, 2, 0, Math.PI * 2);
-                    autonomousCtx.fill();
+                    dynamicalCtx.fillStyle = `rgba(255, 0, 255, ${0.8 - index * 0.8 / trajectory.length})`;
+                    dynamicalCtx.beginPath();
+                    dynamicalCtx.arc(canvasCoords.x, canvasCoords.y, 2, 0, Math.PI * 2);
+                    dynamicalCtx.fill();
                 });
             }
             
             // Draw stream plot point
             const streamCanvasCoords = toCanvasCoords(streamPoint);
-            autonomousCtx.fillStyle = 'rgba(255, 0, 255, 0.8)';
-            autonomousCtx.beginPath();
-            autonomousCtx.arc(streamCanvasCoords.x, streamCanvasCoords.y, 6, 0, Math.PI * 2);
-            autonomousCtx.fill();
+            dynamicalCtx.fillStyle = 'rgba(255, 0, 255, 0.8)';
+            dynamicalCtx.beginPath();
+            dynamicalCtx.arc(streamCanvasCoords.x, streamCanvasCoords.y, 6, 0, Math.PI * 2);
+            dynamicalCtx.fill();
             
-            autonomousCtx.strokeStyle = 'white';
-            autonomousCtx.lineWidth = 2;
-            autonomousCtx.stroke();
+            dynamicalCtx.strokeStyle = 'white';
+            dynamicalCtx.lineWidth = 2;
+            dynamicalCtx.stroke();
 
             // Draw equilibrium point (Q5)
             const eqPoint = toCanvasCoords(controlPoints[4]);
-            autonomousCtx.fillStyle = '#ff7f0e';
-            autonomousCtx.beginPath();
-            autonomousCtx.arc(eqPoint.x, eqPoint.y, 8, 0, Math.PI * 2);
-            autonomousCtx.fill();
+            dynamicalCtx.fillStyle = '#ff7f0e';
+            dynamicalCtx.beginPath();
+            dynamicalCtx.arc(eqPoint.x, eqPoint.y, 8, 0, Math.PI * 2);
+            dynamicalCtx.fill();
             
-            autonomousCtx.strokeStyle = 'white';
-            autonomousCtx.lineWidth = 2;
-            autonomousCtx.stroke();
+            dynamicalCtx.strokeStyle = 'white';
+            dynamicalCtx.lineWidth = 2;
+            dynamicalCtx.stroke();
         }
         
         // Add mouse event handlers for stream plot point
-        autonomousCanvas.addEventListener('mousedown', (e) => {
-            const rect = autonomousCanvas.getBoundingClientRect();
+        dynamicalCanvas.addEventListener('mousedown', (e) => {
+            const rect = dynamicalCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
@@ -1320,9 +1320,9 @@
             }
         });
         
-        autonomousCanvas.addEventListener('mousemove', (e) => {
+        dynamicalCanvas.addEventListener('mousemove', (e) => {
             if (streamPoint.dragging) {
-                const rect = autonomousCanvas.getBoundingClientRect();
+                const rect = dynamicalCanvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
                 
@@ -1339,18 +1339,18 @@
             }
         });
         
-        autonomousCanvas.addEventListener('mouseup', () => {
+        dynamicalCanvas.addEventListener('mouseup', () => {
             streamPoint.dragging = false;
         });
         
-        autonomousCanvas.addEventListener('mouseleave', () => {
+        dynamicalCanvas.addEventListener('mouseleave', () => {
             streamPoint.dragging = false;
         });
         
         // Add touch support for stream plot point
-        autonomousCanvas.addEventListener('touchstart', (e) => {
+        dynamicalCanvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            const rect = autonomousCanvas.getBoundingClientRect();
+            const rect = dynamicalCanvas.getBoundingClientRect();
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
@@ -1370,10 +1370,10 @@
             }
         });
         
-        autonomousCanvas.addEventListener('touchmove', (e) => {
+        dynamicalCanvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (streamPoint.dragging) {
-                const rect = autonomousCanvas.getBoundingClientRect();
+                const rect = dynamicalCanvas.getBoundingClientRect();
                 const touch = e.touches[0];
                 const mouseX = touch.clientX - rect.left;
                 const mouseY = touch.clientY - rect.top;
@@ -1391,7 +1391,7 @@
             }
         });
         
-        autonomousCanvas.addEventListener('touchend', () => {
+        dynamicalCanvas.addEventListener('touchend', () => {
             streamPoint.dragging = false;
         });
         
