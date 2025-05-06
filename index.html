@@ -974,27 +974,6 @@
             // Clear canvas
             curveCtx.clearRect(0, 0, width, height);
             
-            // Draw grid
-            curveCtx.strokeStyle = '#ddd';
-            curveCtx.lineWidth = 1;
-            const gridSize = 10;
-            
-            for (let x = 0; x <= gridSize; x++) {
-                const posX = (width / gridSize) * x;
-                curveCtx.beginPath();
-                curveCtx.moveTo(posX, 0);
-                curveCtx.lineTo(posX, height);
-                curveCtx.stroke();
-            }
-            
-            for (let y = 0; y <= gridSize; y++) {
-                const posY = (height / gridSize) * y;
-                curveCtx.beginPath();
-                curveCtx.moveTo(0, posY);
-                curveCtx.lineTo(width, posY);
-                curveCtx.stroke();
-            }
-            
             // Draw control lines
             curveCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
             curveCtx.lineWidth = 1;
@@ -1093,27 +1072,6 @@
             
             // Clear canvas
             autonomousCtx.clearRect(0, 0, width, height);
-            
-            // Draw grid
-            autonomousCtx.strokeStyle = '#ddd';
-            autonomousCtx.lineWidth = 1;
-            const gridSize = 10;
-            
-            for (let x = 0; x <= gridSize; x++) {
-                const posX = (width / gridSize) * x;
-                autonomousCtx.beginPath();
-                autonomousCtx.moveTo(posX, 0);
-                autonomousCtx.lineTo(posX, height);
-                autonomousCtx.stroke();
-            }
-            
-            for (let y = 0; y <= gridSize; y++) {
-                const posY = (height / gridSize) * y;
-                autonomousCtx.beginPath();
-                autonomousCtx.moveTo(0, posY);
-                autonomousCtx.lineTo(width, posY);
-                autonomousCtx.stroke();
-            }
             
             // Draw bezier curves
             autonomousCtx.strokeStyle = 'black';
