@@ -624,7 +624,7 @@
             return fract((p3.x + p3.y) * p3.z);
         }
 
-        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
         {
             vec2 uv = fragCoord.xy / iResolution.xy;
 
@@ -651,16 +651,8 @@
         const float pi = 3.1415926538;
         const float inc = 2.0 * pi / 6.0;
 
-        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        vec3 getColor(float angle)
         {
-            vec2 uv = fragCoord.xy / iResolution.xy;
-
-            vec3 color = texture(iChannel0, uv).rgb;
-            color = clamp((color - 0.49) * 5.0 + 0.49, 0.0, 1.0);
-
-            vec2 dir = texture(iChannel1, uv).rg;
-            float angle = atan(dir.y, dir.x);
-
             vec3 start;
             vec3 end;
 
@@ -701,9 +693,98 @@
                 angle = (angle + pi - 5.0 * inc) / inc;
             }
 
-            color.r += mix(start.r, end.r, angle) * 0.4;
-            color.g += mix(start.g, end.g, angle) * 0.4;
-            color.b += mix(start.b, end.b, angle) * 0.4;
+            return vec3(
+                mix(start.r, end.r, angle),
+                mix(start.g, end.g, angle),
+                mix(start.b, end.b, angle)
+            );
+        }
+
+        //------------------------------------------------------------------------------------------------
+        // Arrow SDF, see https://www.shadertoy.com/view/4tXyDn
+
+        float m_stretch(float point, float stretch){
+            return .5 * (sign(point) * stretch - point) * (sign(abs(point) - stretch) + 1.);
+        }
+
+        #define m_stretch_neg(p, st) (.5 * m_stretch(2. * p + st, st))  /* Stretch-negative: positive values are fixed */
+        #define m_stretch_pos(p, st) (.5 * m_stretch(2. * p, st))  /* Stretch-positive: negative values are fixed */
+
+        // A fast "manual" lossy rotate function
+        float ollj_rotate(vec2 uv){
+            const float ROTATE_PARAM0 = sqrt(1.0);
+            const float ROTATE_PARAM1 = sqrt(0.0);
+            return dot(uv, vec2(ROTATE_PARAM0 + ROTATE_PARAM1, ROTATE_PARAM0 - ROTATE_PARAM1));
+        }
+
+        // Optimized arrow SDF
+        float sdf_arrow(vec2 uv, float norm, float angle, float head_height, float stem_width){
+            uv = vec2(cos(angle) * uv.x + sin(angle) * uv.y, -sin(angle) * uv.x + cos(angle) * uv.y);
+
+            norm -= head_height;  // Make sure the norm INCLUDES the arrow head
+            uv.x -= norm;  // Place the arrow's origin at the stem's base!
+
+            uv.y = abs(uv.y);
+            float head = max(ollj_rotate(uv) - head_height, -uv.x);
+
+            uv.x = m_stretch_neg(uv.x, norm);
+            uv.y = m_stretch_pos(uv.y, stem_width);
+            float stem = length(uv);
+
+            return min(head, stem);  // Join head and stem!
+        }
+
+        float draw_arrows(vec2 fragCoord)
+        {
+            vec2 uv = (2.0 * fragCoord.xy - iResolution.xy) / iResolution.y;
+
+            float arrow_norm = 0.07;
+            float arrow_head_height = 0.016;
+            float arrow_stem_width = 0.001;
+            float arrow_aa = 4.0 / iResolution.y;
+
+            const int nbArrows = 15;
+            const float cellSize = 2.0 / float(nbArrows);
+
+            float arrows = 0.0;
+            
+            for (int y = 0; y < nbArrows; ++y)
+            {
+                for (int x = 0; x < nbArrows; ++x)
+                {
+                    vec2 arrowPos = vec2(-1.0, -1.0) + vec2(cellSize) * 0.5 + vec2(float(x) * cellSize, float(y) * cellSize);
+                    vec2 dir = texture(iChannel1, arrowPos * 0.5 + 0.5).rg;
+
+                    vec2  arrow_uv = uv - arrowPos + dir * arrow_norm * 0.5;
+
+                    float arrow_angle = atan(dir.y, dir.x);
+
+                    float arrow = sdf_arrow(arrow_uv, arrow_norm, arrow_angle, arrow_head_height, arrow_stem_width);
+                    arrow = smoothstep(arrow_aa, 0.0, arrow);
+
+                    arrows = max(arrows, arrow);
+                }
+            }
+
+            return arrows;
+        }
+
+        //------------------------------------------------------------------------------------------------
+
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            vec2 uv = fragCoord.xy / iResolution.xy;
+
+            vec3 color = texture(iChannel0, uv).rgb;
+            color = clamp((color - 0.49) * 5.0 + 0.49, 0.0, 1.0);
+
+            vec2 dir = texture(iChannel1, uv).rg;
+            float angle = atan(dir.y, dir.x);
+
+            color += getColor(angle) * 0.4;
+
+            float arrows = draw_arrows(fragCoord);
+            color = (1.0 - arrows) * color;
 
             fragColor = vec4(color, 1.0);
         }
@@ -1365,7 +1446,7 @@
             dynamicalCtx.clearRect(0, 0, width, height);
             
             // Draw bezier curves
-            dynamicalCtx.strokeStyle = 'black';
+            dynamicalCtx.strokeStyle = 'red';
             dynamicalCtx.lineWidth = 3;
             
             // First quadratic bezier curve (Q1, Q2, Q3)
@@ -1398,148 +1479,6 @@
                 dynamicalCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
             dynamicalCtx.stroke();
-            
-            // Draw vector field
-            const gridSizeVectors = 15;
-            const cellWidth = width / gridSizeVectors;
-            const cellHeight = height / gridSizeVectors;
-            
-            for (let i = 0; i <= gridSizeVectors; i++) {
-                for (let j = 0; j <= gridSizeVectors; j++) {
-                    // Convert grid coordinates to normalized coordinates (0-1)
-                    const x = i / gridSizeVectors;
-                    const y = 1 - (j / gridSizeVectors);
-                    
-                    // Get dynamical system gradient (distance gradient)
-                    const dynGradient = getBezierGradient(
-                        { x, y },
-                        { x: controlPoints[0].x, y: controlPoints[0].y },
-                        { x: controlPoints[1].x, y: controlPoints[1].y },
-                        { x: controlPoints[2].x, y: controlPoints[2].y }
-                    );
-                    
-                    // Find closest point on both curves and get curve gradient
-                    let minDist = Infinity;
-                    let closestT = 0;
-                    let closestSegment = 0;
-                    
-                    for (let t = 0; t <= 1; t += 0.001) {
-                        // First segment
-                        const curveX1 = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
-                        const curveY1 = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
-                        
-                        const dist1 = Math.sqrt(
-                            Math.pow(curveX1 - x, 2) + 
-                            Math.pow(curveY1 - y, 2)
-                        );
-                        
-                        if (dist1 < minDist) {
-                            minDist = dist1;
-                            closestT = t;
-                            closestSegment = 0;
-                        }
-                        
-                        // Second segment
-                        const curveX2 = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
-                        const curveY2 = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
-                        
-                        const dist2 = Math.sqrt(
-                            Math.pow(curveX2 - x, 2) + 
-                            Math.pow(curveY2 - y, 2)
-                        );
-                        
-                        if (dist2 < minDist) {
-                            minDist = dist2;
-                            closestT = t;
-                            closestSegment = 1;
-                        }
-                    }
-                    
-                    const curveGradient = closestSegment === 0 ? 
-                        getCurveGradient(
-                            { x: controlPoints[0].x, y: controlPoints[0].y },
-                            { x: controlPoints[1].x, y: controlPoints[1].y },
-                            { x: controlPoints[2].x, y: controlPoints[2].y },
-                            closestT
-                        ) :
-                        getCurveGradient(
-                            { x: controlPoints[2].x, y: controlPoints[2].y },
-                            { x: controlPoints[3].x, y: controlPoints[3].y },
-                            { x: controlPoints[4].x, y: controlPoints[4].y },
-                            closestT
-                        );
-                    
-                    // Check if we're at the end point (Q5)
-                    const endPoint = { x: controlPoints[4].x, y: controlPoints[4].y };
-                    const distToEnd = Math.sqrt(
-                        Math.pow(x - endPoint.x, 2) + 
-                        Math.pow(y - endPoint.y, 2)
-                    );
-                    
-                    // Calculate beta and alpha based on distance
-                    let beta = 1.0 / (1.0 + lambda * minDist);
-                    let alpha = 1.0 - beta;
-                    
-                    // If we're very close to the end point, only use distance gradient
-                    if (distToEnd < 0.01) {
-                        beta = 0;
-                        alpha = 1;
-                    }
-                    
-                    // Combine the gradients
-                    let combinedX = -alpha * (-dynGradient.x) + beta * curveGradient.tangent.x;
-                    let combinedY = -alpha * (-dynGradient.y) + beta * curveGradient.tangent.y;
-                    
-                    // Normalize the combined vector if it's not zero
-                    const length = Math.sqrt(combinedX * combinedX + combinedY * combinedY);
-                    if (length > 0) {
-                        combinedX = combinedX / length;
-                        combinedY = combinedY / length;
-                    }
-                    
-                    // Convert to canvas coordinates
-                    const centerX = i * cellWidth;
-                    const centerY = j * cellHeight;
-                    
-                    // Scale the gradient for better visualization
-                    const arrowLength = Math.min(cellWidth, cellHeight) * 0.5;
-                    
-                    // Draw the vector line with color based on distance
-                    const red = alpha;  // More red when following distance gradient
-                    const blue = beta;  // More blue when following curve gradient
-                    dynamicalCtx.strokeStyle = `rgba(${red * 255}, 0, ${blue * 255}, 0.7)`;
-                    dynamicalCtx.lineWidth = 2;
-                    
-                    // Only draw the vector if it's not zero
-                    if (length > 0) {
-                        dynamicalCtx.beginPath();
-                        dynamicalCtx.moveTo(centerX, centerY);
-                        dynamicalCtx.lineTo(
-                            centerX + combinedX * arrowLength,
-                            centerY - combinedY * arrowLength
-                        );
-                        
-                        // Draw arrow head
-                        const arrowSize = 6;
-                        const angle = Math.atan2(-combinedY, combinedX);
-                        
-                        dynamicalCtx.lineTo(
-                            centerX + combinedX * arrowLength - arrowSize * Math.cos(angle - Math.PI/6),
-                            centerY - combinedY * arrowLength - arrowSize * Math.sin(angle - Math.PI/6)
-                        );
-                        dynamicalCtx.moveTo(
-                            centerX + combinedX * arrowLength,
-                            centerY - combinedY * arrowLength
-                        );
-                        dynamicalCtx.lineTo(
-                            centerX + combinedX * arrowLength - arrowSize * Math.cos(angle + Math.PI/6),
-                            centerY - combinedY * arrowLength - arrowSize * Math.sin(angle + Math.PI/6)
-                        );
-                        
-                        dynamicalCtx.stroke();
-                    }
-                }
-            }
             
             // Draw trajectory if it exists
             if (trajectory.length > 0) {
