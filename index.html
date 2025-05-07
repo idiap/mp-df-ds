@@ -13,6 +13,7 @@ SPDX-License-Identifier: MIT
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Quadratic Bezier Curve</title>
+
     <style>
         body {
             margin: 0;
@@ -197,6 +198,7 @@ SPDX-License-Identifier: MIT
 
     <script src="glslrenderer.js" type="text/javascript"></script>
 </head>
+
 <body>
     <h1>From Movement Primitive to Distance Field to Dynamical System</h1>
 
@@ -216,7 +218,7 @@ SPDX-License-Identifier: MIT
             </svg>
             Paper
         </a>
-        <a href="https://github.com/mp-df-ds/mp-df-ds" class="button-link">
+        <a href="https://github.com/idiap/mp-df-ds" class="button-link">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
             </svg>
@@ -250,262 +252,50 @@ SPDX-License-Identifier: MIT
         </div>
     </div>
 
-    <!-- <div class="info">
-        <p><strong>Click and drag</strong> on the distance field to see the closest point and gradient vector.</p>
-    </div> -->
+    <script id="curve-shader-functions" type="shader">
+        // Contains all the information about the distance between a 2D point and a quadratic
+        // Bezier Curve with 2 segments
+        struct DistanceToCurve
+        {
+            float distance;
+            float t;
 
-    <script id="distanceFieldFragmentShader" type="x-shader/x-fragment">
-        precision highp float;
-        
-        uniform vec2 p0;
-        uniform vec2 p1;
-        uniform vec2 p2;
-        uniform vec2 p3;
-        uniform vec2 p4;
-        uniform vec2 iResolution;
-        uniform vec2 clickPosition;
-        uniform bool showGradient;
-        
+            // Points defining tne closest segment
+            vec2 p0;
+            vec2 p1;
+            vec2 p2;
+        };
+
+
         // Quadratic bezier evaluation
-        vec2 evaluateBezier(vec2 A, vec2 B, vec2 C, float t) {
+        vec2 evaluateBezier(vec2 A, vec2 B, vec2 C, float t)
+        {
             float t1 = 1.0 - t;
-            return t1*t1*A + 2.0*t1*t*B + t*t*C;
+            return t1 * t1 * A + 2.0 * t1 * t * B + t * t * C;
         }
-        
-        // Signed distance to quadratic bezier curve with analytical gradient
-        // Returns vec3(distance, closest_t, is_valid)
-        vec3 sdBezierWithT(vec2 pos, vec2 A, vec2 B, vec2 C) {
+
+        // Computes the distance of a 2D point to a quadratic bezier curve with analytical gradient
+        // Returns vec2(distance, closest_t)
+        vec2 getDistanceToBezier(vec2 pos, vec2 A, vec2 B, vec2 C)
+        {
             vec2 a = B - A;
             vec2 b = A - 2.0*B + C;
             vec2 c = a * 2.0;
             vec2 d = A - pos;
-            
+
             float kk = 1.0 / dot(b,b);
             float kx = kk * dot(a,b);
             float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
             float kz = kk * dot(d,a);
-            
+
             float res = 0.0;
             float t_res = 0.0;
-            bool valid = true;
-            
+
             float p = ky - kx*kx;
             float p3 = p*p*p;
             float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
             float h = q*q + 4.0*p3;
-            
-            if(h >= 0.0) { 
-                h = sqrt(h);
-                vec2 x = (vec2(h, -h) - q) / 2.0;
-                vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0));
-                float t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
-                t_res = t;
-                vec2 q = d + (c + b*t)*t;
-                res = dot(q,q);
-            } else {
-                float z = sqrt(-p);
-                float v = acos(q/(p*z*2.0)) / 3.0;
-                float m = cos(v);
-                float n = sin(v)*1.732050808;
-                vec3 t = clamp(vec3(m + m, -n - m, n - m) * z - kx, 0.0, 1.0);
-                
-                vec2 qx = d + (c + b*t.x)*t.x;
-                float dx = dot(qx, qx);
-                
-                vec2 qy = d + (c + b*t.y)*t.y;
-                float dy = dot(qy, qy);
-                
-                vec2 qz = d + (c + b*t.z)*t.z;
-                float dz = dot(qz, qz);
-                
-                // Find minimum
-                float min_d = dx;
-                t_res = t.x;
-                
-                if(dy < min_d) {
-                    min_d = dy;
-                    t_res = t.y;
-                }
-                
-                if(dz < min_d) {
-                    min_d = dz;
-                    t_res = t.z;
-                }
-                
-                res = min_d;
-            }
-            
-            return vec3(sqrt(res), t_res, valid ? 1.0 : 0.0);
-        }
-        
-        // Simplified distance-only function
-        float sdBezier(vec2 pos, vec2 A, vec2 B, vec2 C) {
-            return sdBezierWithT(pos, A, B, C).x;
-        }
-        
-        // Function to compute minimum distance to two quadratic Bezier curves
-        float sdTwoBeziers(vec2 pos, vec2 q1, vec2 q2, vec2 q3, vec2 q4, vec2 q5) {
-            // First segment: q1, q2, q3
-            float d1 = sdBezier(pos, q1, q2, q3);
-            
-            // Second segment: q3, q4, q5
-            float d2 = sdBezier(pos, q3, q4, q5);
-            
-            // Return minimum distance
-            return min(d1, d2);
-        }
-        
-        void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-            // Normalized pixel coordinates (from 0 to 1)
-            vec2 uv = fragCoord / iResolution.xy;
-            
-            // Compute distance to both bezier curves
-            float d = sdTwoBeziers(uv, p0, p1, p2, p3, p4);
-            
-            // Scale the distance for better visualization
-            float scaledDistance = float(int(d * 20.0)) / 10.0;
 
-            // Apply enhanced color map
-            vec3 col = vec3(1, 1, 1) * scaledDistance;
-            
-            // Visualize the curves themselves
-            float lineWidth = 0.008;
-            float edge1 = smoothstep(lineWidth, 0.0, sdBezier(uv, p0, p1, p2));
-            float edge2 = smoothstep(lineWidth, 0.0, sdBezier(uv, p2, p3, p4));
-            col = mix(col, vec3(1.0, 0.0, 0.0), max(edge1, edge2));
-            
-            // Show gradient vector if requested
-            if (showGradient) {
-                // Find the closest point on both curves
-                vec3 closestInfo1 = sdBezierWithT(clickPosition, p0, p1, p2);
-                vec3 closestInfo2 = sdBezierWithT(clickPosition, p2, p3, p4);
-                
-                // Use the closer one
-                vec3 closestInfo = closestInfo1.x < closestInfo2.x ? closestInfo1 : closestInfo2;
-                float t_param = closestInfo.y;
-                
-                // Get the closest point on the curve
-                vec2 closestPoint = closestInfo1.x < closestInfo2.x ? 
-                    evaluateBezier(p0, p1, p2, t_param) : 
-                    evaluateBezier(p2, p3, p4, t_param);
-                
-                // Get the gradient (direction from closest point to click position)
-                vec2 gradient = normalize(closestPoint - clickPosition);
-                
-                // Highlight the click position
-                if (length(uv - clickPosition) < 0.01) {
-                    col = vec3(1.0, 1.0, 1.0);
-                }
-                
-                // Draw line from click point to closest point
-                float lineThickness = 0.002;
-                vec2 dir = closestPoint - clickPosition;
-                float lineLength = length(dir);
-                dir = normalize(dir);
-                
-                // Check if point is near the line
-                float t_line = clamp(dot(uv - clickPosition, dir) / lineLength, 0.0, 1.0);
-                vec2 pointOnLine = clickPosition + t_line * lineLength * dir;
-                float distToLine = distance(uv, pointOnLine);
-                
-                if (distToLine < lineThickness) {
-                    col = vec3(1.0, 0.0, 0.0); // Red line to closest point
-                }
-                
-                // Draw the normal vector (perpendicular to the curve at closest point)
-                // Compute tangent at the closest point
-                float delta = 0.01;
-                vec2 pointBefore = closestInfo1.x < closestInfo2.x ? 
-                    evaluateBezier(p0, p1, p2, max(0.0, t_param - delta)) : 
-                    evaluateBezier(p2, p3, p4, max(0.0, t_param - delta));
-                vec2 pointAfter = closestInfo1.x < closestInfo2.x ? 
-                    evaluateBezier(p0, p1, p2, min(1.0, t_param + delta)) : 
-                    evaluateBezier(p2, p3, p4, min(1.0, t_param + delta));
-                vec2 tangent = normalize(pointAfter - pointBefore);
-                vec2 normal = vec2(-tangent.y, tangent.x);  // Perpendicular to tangent
-                
-                // Draw normal vector
-                float gradLineLength = 0.05;
-                dir = normal;
-                
-                t_line = clamp(dot(uv - closestPoint, dir) / gradLineLength, 0.0, 1.0);
-                pointOnLine = closestPoint + t_line * gradLineLength * dir;
-                distToLine = distance(uv, pointOnLine);
-                
-                if (distToLine < lineThickness) {
-                    col = vec3(0.0, 1.0, 0.0); // Green line for normal/gradient
-                }
-                
-                // Draw anti-normal vector (in opposite direction)
-                dir = -normal;
-                t_line = clamp(dot(uv - closestPoint, dir) / gradLineLength, 0.0, 1.0);
-                pointOnLine = closestPoint + t_line * gradLineLength * dir;
-                distToLine = distance(uv, pointOnLine);
-                
-                if (distToLine < lineThickness) {
-                    col = vec3(0.0, 1.0, 0.0); // Green line for normal/gradient (opposite side)
-                }
-                
-                // Draw closest point
-                if (distance(uv, closestPoint) < 0.01) {
-                    col = vec3(1.0, 1.0, 0.0); // Yellow for closest point
-                }
-                
-                // Add contour line through the point at same distance
-                float clickDistance = closestInfo.x;
-                float contourDist = abs(d - clickDistance);
-                float contourWidth = 0.001;
-                if (contourDist < contourWidth) {
-                    col = mix(col, vec3(1.0, 1.0, 1.0), 0.5);
-                }
-            }
-            
-            fragColor = vec4(col, 1.0);
-        }
-        
-        void main() {
-            mainImage(gl_FragColor, gl_FragCoord.xy);
-        }
-    </script>
-
-    <script id="flowfield-fragment-shader" type="shader">
-        precision mediump float;
-
-        uniform vec2 p0;
-        uniform vec2 p1;
-        uniform vec2 p2;
-        uniform vec2 p3;
-        uniform vec2 p4;
-        uniform float lambda;
-
-        // Quadratic bezier evaluation
-        vec2 evaluateBezier(vec2 A, vec2 B, vec2 C, float t) {
-            float t1 = 1.0 - t;
-            return t1*t1*A + 2.0*t1*t*B + t*t*C;
-        }
-
-        // Signed distance to quadratic bezier curve with analytical gradient
-        // Returns vec3(distance, closest_t, is_valid)
-        vec3 sdBezierWithT(vec2 pos, vec2 A, vec2 B, vec2 C) {
-            vec2 a = B - A;
-            vec2 b = A - 2.0*B + C;
-            vec2 c = a * 2.0;
-            vec2 d = A - pos;
-            
-            float kk = 1.0 / dot(b,b);
-            float kx = kk * dot(a,b);
-            float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
-            float kz = kk * dot(d,a);
-            
-            float res = 0.0;
-            float t_res = 0.0;
-            bool valid = true;
-            
-            float p = ky - kx*kx;
-            float p3 = p*p*p;
-            float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
-            float h = q*q + 4.0*p3;
-            
             if(h >= 0.0) {
                 h = sqrt(h);
                 vec2 x = (vec2(h, -h) - q) / 2.0;
@@ -520,35 +310,189 @@ SPDX-License-Identifier: MIT
                 float m = cos(v);
                 float n = sin(v)*1.732050808;
                 vec3 t = clamp(vec3(m + m, -n - m, n - m) * z - kx, 0.0, 1.0);
-                
+
                 vec2 qx = d + (c + b*t.x)*t.x;
                 float dx = dot(qx, qx);
-                
+
                 vec2 qy = d + (c + b*t.y)*t.y;
                 float dy = dot(qy, qy);
-                
+
                 vec2 qz = d + (c + b*t.z)*t.z;
                 float dz = dot(qz, qz);
-                
+
                 // Find minimum
                 float min_d = dx;
                 t_res = t.x;
-                
+
                 if(dy < min_d) {
                     min_d = dy;
                     t_res = t.y;
                 }
-                
+
                 if(dz < min_d) {
                     min_d = dz;
                     t_res = t.z;
                 }
-                
+
                 res = min_d;
             }
-            
-            return vec3(sqrt(res), t_res, valid ? 1.0 : 0.0);
+
+            return vec2(sqrt(res), t_res);
         }
+
+        // Computes the distance of a 2D point to a quadratic bezier curve with 2 segments with analytical gradient
+        DistanceToCurve getDistanceToCurve(vec2 pos, vec2 A, vec2 B, vec2 C, vec2 D, vec2 E)
+        {
+            // Find the closest point on both segments
+            vec2 closestInfo1 = getDistanceToBezier(pos, A, B, C);
+            vec2 closestInfo2 = getDistanceToBezier(pos, C, D, E);
+
+            // Use the closer one
+            vec2 closestInfo = closestInfo1.x < closestInfo2.x ? closestInfo1 : closestInfo2;
+
+            DistanceToCurve result;
+            result.distance =  closestInfo.x;
+            result.t =  closestInfo.y;
+
+            if (closestInfo1.x < closestInfo2.x)
+            {
+                result.p0 = A;
+                result.p1 = B;
+                result.p2 = C;
+            }
+            else
+            {
+                result.p0 = C;
+                result.p1 = D;
+                result.p2 = E;
+            }
+
+            return result;
+        }
+    </script>
+
+    <script id="distance-field-fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform vec2 p0;
+        uniform vec2 p1;
+        uniform vec2 p2;
+        uniform vec2 p3;
+        uniform vec2 p4;
+        uniform vec2 clickPosition;
+        uniform bool showGradient;
+
+        #include curve-shader-functions
+
+        void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+            // Normalized pixel coordinates (from 0 to 1)
+            vec2 uv = fragCoord / iResolution.xy;
+
+            // Retrieve the distance to the curve
+            DistanceToCurve infos = getDistanceToCurve(uv, p0, p1, p2, p3, p4);
+
+            // Scale the distance for better visualization
+            float scaledDistance = float(int(infos.distance * 20.0)) / 10.0;
+
+            // Apply enhanced color map
+            vec3 col = vec3(1, 1, 1) * scaledDistance;
+
+            // Visualize the curves themselves
+            float lineWidth = 0.008;
+            float edge1 = smoothstep(lineWidth, 0.0, getDistanceToBezier(uv, p0, p1, p2).x);
+            float edge2 = smoothstep(lineWidth, 0.0, getDistanceToBezier(uv, p2, p3, p4).x);
+            col = mix(col, vec3(1.0, 0.0, 0.0), max(edge1, edge2));
+
+            // Show gradient vector if requested
+            if (showGradient) {
+                // Find the closest point on both curves
+                DistanceToCurve clickInfos = getDistanceToCurve(clickPosition, p0, p1, p2, p3, p4);
+
+                // Get the closest point on the curve
+                vec2 closestPoint = evaluateBezier(clickInfos.p0, clickInfos.p1, clickInfos.p2, clickInfos.t);
+
+                // Get the gradient (direction from closest point to click position)
+                vec2 gradient = normalize(closestPoint - clickPosition);
+
+                // Highlight the click position
+                if (length(uv - clickPosition) < 0.01) {
+                    col = vec3(1.0, 1.0, 1.0);
+                }
+
+                // Draw line from click point to closest point
+                float lineThickness = 0.002;
+                vec2 dir = closestPoint - clickPosition;
+                float lineLength = length(dir);
+                dir = normalize(dir);
+
+                // Check if point is near the line
+                float t_line = clamp(dot(uv - clickPosition, dir) / lineLength, 0.0, 1.0);
+                vec2 pointOnLine = clickPosition + t_line * lineLength * dir;
+                float distToLine = distance(uv, pointOnLine);
+
+                if (distToLine < lineThickness) {
+                    col = vec3(1.0, 0.0, 0.0); // Red line to closest point
+                }
+
+                // Draw the normal vector (perpendicular to the curve at closest point)
+                // Compute tangent at the closest point
+                float delta = 0.01;
+                vec2 pointBefore = evaluateBezier(clickInfos.p0, clickInfos.p1, clickInfos.p2, max(0.0, clickInfos.t - delta));
+                vec2 pointAfter = evaluateBezier(clickInfos.p0, clickInfos.p1, clickInfos.p2, min(1.0, clickInfos.t + delta));
+                vec2 tangent = normalize(pointAfter - pointBefore);
+                vec2 normal = vec2(-tangent.y, tangent.x);  // Perpendicular to tangent
+
+                // Draw normal vector
+                float gradLineLength = 0.05;
+                dir = normal;
+
+                t_line = clamp(dot(uv - closestPoint, dir) / gradLineLength, 0.0, 1.0);
+                pointOnLine = closestPoint + t_line * gradLineLength * dir;
+                distToLine = distance(uv, pointOnLine);
+
+                if (distToLine < lineThickness) {
+                    col = vec3(0.0, 1.0, 0.0); // Green line for normal/gradient
+                }
+
+                // Draw anti-normal vector (in opposite direction)
+                dir = -normal;
+                t_line = clamp(dot(uv - closestPoint, dir) / gradLineLength, 0.0, 1.0);
+                pointOnLine = closestPoint + t_line * gradLineLength * dir;
+                distToLine = distance(uv, pointOnLine);
+
+                if (distToLine < lineThickness) {
+                    col = vec3(0.0, 1.0, 0.0); // Green line for normal/gradient (opposite side)
+                }
+
+                // Draw closest point
+                if (distance(uv, closestPoint) < 0.01) {
+                    col = vec3(1.0, 1.0, 0.0); // Yellow for closest point
+                }
+
+                // Add contour line through the point at same distance
+                float clickDistance = clickInfos.distance;
+                float contourDist = abs(infos.distance - clickDistance);
+                float contourWidth = 0.001;
+                if (contourDist < contourWidth) {
+                    col = mix(col, vec3(1.0, 1.0, 1.0), 0.5);
+                }
+            }
+
+            fragColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <script id="flowfield-fragment-shader" type="shader">
+        precision mediump float;
+
+        uniform vec2 p0;
+        uniform vec2 p1;
+        uniform vec2 p2;
+        uniform vec2 p3;
+        uniform vec2 p4;
+        uniform float lambda;
+
+        #include curve-shader-functions
 
         // Function to calculate curve gradient tangent at parameter t
         vec2 getCurveGradientTangent(vec2 A, vec2 B, vec2 C, float t) {
@@ -564,7 +508,7 @@ SPDX-License-Identifier: MIT
                 -2.0 * (1.0 - t) * A.x + 2.0 * (1.0 - 2.0 * t) * B.x + 2.0 * t * C.x,
                 -2.0 * (1.0 - t) * A.y + 2.0 * (1.0 - 2.0 * t) * B.y + 2.0 * t * C.y
             );
-            
+
             // Normalize the tangent vector
             return normalize(tangent);
         }
@@ -573,46 +517,36 @@ SPDX-License-Identifier: MIT
         {
             // Normalized pixel coordinates (from 0 to 1)
             vec2 uv = fragCoord / iResolution.xy;
-            
-            // Find the closest point on both curves
-            vec3 closestInfo1 = sdBezierWithT(uv, p0, p1, p2);
-            vec3 closestInfo2 = sdBezierWithT(uv, p2, p3, p4);
-            
-            // Use the closer one
-            vec3 closestInfo = closestInfo1.x < closestInfo2.x ? closestInfo1 : closestInfo2;
-            float t_param = closestInfo.y;
-            
+
+            // Retrieve the distance to the curve
+            DistanceToCurve infos = getDistanceToCurve(uv, p0, p1, p2, p3, p4);
+    
             // Get curve gradient tangent based on closest segment
-            vec2 curveGradientTangent = closestInfo1.x < closestInfo2.x ?
-                getCurveGradientTangent(p0, p1, p2, t_param) :
-                getCurveGradientTangent(p2, p3, p4, t_param);
+            vec2 curveGradientTangent = getCurveGradientTangent(infos.p0, infos.p1, infos.p2, infos.t);
 
             // Get dynamical system gradient (distance gradient)
-            vec2 closestPoint = closestInfo1.x < closestInfo2.x ?
-                evaluateBezier(p0, p1, p2, t_param) :
-                evaluateBezier(p2, p3, p4, t_param);
-            
+            vec2 closestPoint = evaluateBezier(infos.p0, infos.p1, infos.p2, infos.t);
             vec2 dynGradient = normalize(closestPoint - uv);
 
             // Check if we're at the end point
             float distToEnd = length(uv - p4);
-            
+
             // Calculate beta and alpha based on distance
-            float beta = 1.0 / (1.0 + lambda * closestInfo.x);
+            float beta = 1.0 / (1.0 + lambda * infos.distance);
             float alpha = 1.0 - beta;
-            
+
             // If we're very close to the end point, only use distance gradient
             if (distToEnd < 0.01) {
                 beta = 0.0;
                 alpha = 1.0;
             }
-            
+
             // Combine the gradients
             vec2 gradient = vec2(
                 -alpha * (-dynGradient.x) + beta * curveGradientTangent.x,
                 -alpha * (-dynGradient.y) + beta * curveGradientTangent.y
             );
-            
+
             // Normalize the combined vector
             gradient = normalize(gradient);
 
@@ -756,7 +690,7 @@ SPDX-License-Identifier: MIT
             const float cellSize = 2.0 / float(nbArrows);
 
             float arrows = 0.0;
-            
+
             for (int y = 0; y < nbArrows; ++y)
             {
                 for (int x = 0; x < nbArrows; ++x)
@@ -804,15 +738,15 @@ SPDX-License-Identifier: MIT
         function vec2(x, y) {
             return { x: x, y: y };
         }
-        
+
         function add(a, b) {
             return { x: a.x + b.x, y: a.y + b.y };
         }
-        
+
         function sub(a, b) {
             return { x: a.x - b.x, y: a.y - b.y };
         }
-        
+
         function mul(a, s) {
             if (typeof s === 'number') {
                 return { x: a.x * s, y: a.y * s };
@@ -820,21 +754,21 @@ SPDX-License-Identifier: MIT
                 return { x: a.x * s.x, y: a.y * s.y };
             }
         }
-        
+
         function length(v) {
             return Math.sqrt(v.x * v.x + v.y * v.y);
         }
-        
+
         function normalize(v) {
             const len = length(v);
             if (len === 0) return { x: 0, y: 0 };
             return { x: v.x / len, y: v.y / len };
         }
-        
+
         function dot(a, b) {
             return a.x * b.x + a.y * b.y;
         }
-        
+
         // Bezier curve functions
         function evaluateBezier(A, B, C, t) {
             const t1 = 1.0 - t;
@@ -846,28 +780,28 @@ SPDX-License-Identifier: MIT
                 mul(C, t * t)
             );
         }
-        
+
         function sdBezierWithT(pos, A, B, C) {
             // Analytical solution for quadratic bezier curve
             const a = sub(B, A);
             const b = add(sub(A, mul(B, 2.0)), C);
             const c = mul(a, 2.0);
             const d = sub(A, pos);
-            
+
             // Compute coefficients for the cubic equation
             const kk = 1.0 / dot(b, b);
             const kx = kk * dot(a, b);
             const ky = kk * (2.0 * dot(a, a) + dot(d, b)) / 3.0;
             const kz = kk * dot(d, a);
-            
+
             let res = 0.0;
             let t_res = 0.0;
-            
+
             const p = ky - kx*kx;
             const p3 = p*p*p;
             const q = kx * (2.0 * kx * kx - 3.0 * ky) + kz;
             const h = q*q + 4.0 * p3;
-            
+
             if (h >= 0.0) {
                 // One real root
                 const h_sqrt = Math.sqrt(h);
@@ -886,81 +820,81 @@ SPDX-License-Identifier: MIT
                 const t1 = Math.max(0.0, Math.min(1.0, (m + m) * z - kx));
                 const t2 = Math.max(0.0, Math.min(1.0, (-n - m) * z - kx));
                 const t3 = Math.max(0.0, Math.min(1.0, (n - m) * z - kx));
-                
+
                 // Evaluate all three roots
                 const q1 = add(d, add(mul(c, t1), mul(b, t1 * t1)));
                 const d1 = dot(q1, q1);
-                
+
                 const q2 = add(d, add(mul(c, t2), mul(b, t2 * t2)));
                 const d2 = dot(q2, q2);
-                
+
                 const q3 = add(d, add(mul(c, t3), mul(b, t3 * t3)));
                 const d3 = dot(q3, q3);
-                
+
                 // Find minimum distance
                 res = d1;
                 t_res = t1;
-                
+
                 if (d2 < res) {
                     res = d2;
                     t_res = t2;
                 }
-                
+
                 if (d3 < res) {
                     res = d3;
                     t_res = t3;
                 }
             }
-            
+
             return { x: Math.sqrt(res), y: t_res };
         }
-        
+
         // Function to calculate gradient at a point (JavaScript version)
         function getBezierGradient(pos, A, B, C) {
             // Find closest point on both curves using numerical method
             let minDist = Infinity;
             let closestPoint = { x: 0, y: 0 };
-            
+
             // Check first segment (Q1, Q2, Q3)
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
                 const y = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
-                
+
                 const dist = Math.sqrt(
-                    Math.pow(pos.x - x, 2) + 
+                    Math.pow(pos.x - x, 2) +
                     Math.pow(pos.y - y, 2)
                 );
-                
+
                 if (dist < minDist) {
                     minDist = dist;
                     closestPoint = { x, y };
                 }
             }
-            
+
             // Check second segment (Q3, Q4, Q5)
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
                 const y = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
-                
+
                 const dist = Math.sqrt(
-                    Math.pow(pos.x - x, 2) + 
+                    Math.pow(pos.x - x, 2) +
                     Math.pow(pos.y - y, 2)
                 );
-                
+
                 if (dist < minDist) {
                     minDist = dist;
                     closestPoint = { x, y };
                 }
             }
-            
+
             // Calculate gradient (direction from query point to closest point)
             const dx = closestPoint.x - pos.x;
             const dy = closestPoint.y - pos.y;
             const length = Math.sqrt(dx * dx + dy * dy);
-            
+
             // Normalize the gradient
-            return length > 0.0001 ? 
-                { x: dx / length, y: dy / length } : 
+            return length > 0.0001 ?
+                { x: dx / length, y: dy / length } :
                 { x: 0, y: 0 };
         }
 
@@ -971,21 +905,21 @@ SPDX-License-Identifier: MIT
             // B'(t) = -2(1-t)A + 2(1-2t)B + 2tC
             const dx = -2 * (1 - t) * A.x + 2 * (1 - 2 * t) * B.x + 2 * t * C.x;
             const dy = -2 * (1 - t) * A.y + 2 * (1 - 2 * t) * B.y + 2 * t * C.y;
-            
+
             // Second derivative for curvature
             // B''(t) = 2A - 4B + 2C
             const d2x = 2 * A.x - 4 * B.x + 2 * C.x;
             const d2y = 2 * A.y - 4 * B.y + 2 * C.y;
-            
+
             // Calculate curvature
             const speed = Math.sqrt(dx * dx + dy * dy);
             const curvature = (dx * d2y - dy * d2x) / Math.pow(speed, 3);
-            
+
             // If we're at the end point (t = 1), return zero gradient
             if (Math.abs(t - 1.0) < 0.001) {
                 return { tangent: { x: 0, y: 0 }, curvature: 0, speed: 0 };
             }
-            
+
             // Normalize the tangent vector
             const length = Math.sqrt(dx * dx + dy * dy);
             if (length > 0) {
@@ -997,11 +931,11 @@ SPDX-License-Identifier: MIT
             }
             return { tangent: { x: 0, y: 0 }, curvature: 0, speed: 0 };
         }
-        
+
         // Add stream plot point
         const streamPoint = { x: 0.3, y: 0.3, dragging: false };
         let trajectory = [];
-        
+
         // Function to compute trajectory
         function computeTrajectory(startPoint, steps = 1000, stepSize = 0.005) {
             const trajectory = [startPoint];
@@ -1010,10 +944,10 @@ SPDX-License-Identifier: MIT
             let convergenceCount = 0;
             let stuckCount = 0;
             let lastPoint = { ...startPoint };
-            
+
             // Get lambda value from slider
             const lambda = parseFloat(document.getElementById('lambdaSlider').value);
-            
+
             for (let i = 0; i < steps; i++) {
                 // Get gradient at current point
                 const gradient = getBezierGradient(
@@ -1022,48 +956,48 @@ SPDX-License-Identifier: MIT
                     vec2(controlPoints[1].x, controlPoints[1].y),
                     vec2(controlPoints[2].x, controlPoints[2].y)
                 );
-                
+
                 // Find closest point on both curves and get curve gradient
                 let minDist = Infinity;
                 let closestT = 0;
                 let closestSegment = 0;
-                
+
                 // Check first segment
                 for (let t = 0; t <= 1; t += 0.001) {
                     const curveX = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
                     const curveY = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
-                    
+
                     const dist = Math.sqrt(
-                        Math.pow(curveX - currentPoint.x, 2) + 
+                        Math.pow(curveX - currentPoint.x, 2) +
                         Math.pow(curveY - currentPoint.y, 2)
                     );
-                    
+
                     if (dist < minDist) {
                         minDist = dist;
                         closestT = t;
                         closestSegment = 0;
                     }
                 }
-                
+
                 // Check second segment
                 for (let t = 0; t <= 1; t += 0.001) {
                     const curveX = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
                     const curveY = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
-                    
+
                     const dist = Math.sqrt(
-                        Math.pow(curveX - currentPoint.x, 2) + 
+                        Math.pow(curveX - currentPoint.x, 2) +
                         Math.pow(curveY - currentPoint.y, 2)
                     );
-                    
+
                     if (dist < minDist) {
                         minDist = dist;
                         closestT = t;
                         closestSegment = 1;
                     }
                 }
-                
+
                 // Get curve gradient based on closest segment
-                const curveGradient = closestSegment === 0 ? 
+                const curveGradient = closestSegment === 0 ?
                     getCurveGradient(
                         { x: controlPoints[0].x, y: controlPoints[0].y },
                         { x: controlPoints[1].x, y: controlPoints[1].y },
@@ -1076,37 +1010,37 @@ SPDX-License-Identifier: MIT
                         { x: controlPoints[4].x, y: controlPoints[4].y },
                         closestT
                     );
-                
+
                 // Calculate beta and alpha based on distance
                 let beta = 1.0 / (1.0 + lambda * minDist);
                 let alpha = 1.0 - beta;
-                
+
                 // If we're very close to the end point (Q5), only use distance gradient
                 const endPoint = { x: controlPoints[4].x, y: controlPoints[4].y };
                 const distToEnd = Math.sqrt(
-                    Math.pow(currentPoint.x - endPoint.x, 2) + 
+                    Math.pow(currentPoint.x - endPoint.x, 2) +
                     Math.pow(currentPoint.y - endPoint.y, 2)
                 );
-                
+
                 if (distToEnd < 0.01) {
                     beta = 0;
                     alpha = 1;
                 }
-                
+
                 // Combine the gradients
                 let combinedX = -alpha * (-gradient.x) + beta * curveGradient.tangent.x;
                 let combinedY = -alpha * (-gradient.y) + beta * curveGradient.tangent.y;
-                
+
                 // Normalize the combined vector if it's not zero
                 const length = Math.sqrt(combinedX * combinedX + combinedY * combinedY);
                 if (length > 0) {
                     combinedX = combinedX / length;
                     combinedY = combinedY / length;
                 }
-                
+
                 // Adaptive step size based on distance to goal and curve
                 let adaptiveStepSize = stepSize;
-                
+
                 // Increase step size when far from the curve or end point
                 if (minDist > 0.1 || distToEnd > 0.2) {
                     adaptiveStepSize = stepSize * 3;
@@ -1115,26 +1049,26 @@ SPDX-License-Identifier: MIT
                 else if (distToEnd < 0.05) {
                     adaptiveStepSize = stepSize * 0.3;
                 }
-                
+
                 // Further reduce step size if we're stuck
                 if (stuckCount > 10) {
                     adaptiveStepSize *= 0.5;
                 }
-                
+
                 // Update position
                 currentPoint.x += combinedX * adaptiveStepSize;
                 currentPoint.y += combinedY * adaptiveStepSize;
-                
+
                 // Keep point within bounds
                 currentPoint.x = Math.max(0, Math.min(1, currentPoint.x));
                 currentPoint.y = Math.max(0, Math.min(1, currentPoint.y));
-                
+
                 // Check if we're stuck (not moving much)
                 const movement = Math.sqrt(
-                    Math.pow(currentPoint.x - lastPoint.x, 2) + 
+                    Math.pow(currentPoint.x - lastPoint.x, 2) +
                     Math.pow(currentPoint.y - lastPoint.y, 2)
                 );
-                
+
                 if (movement < 0.0001) {
                     stuckCount++;
                     if (stuckCount > 20) {
@@ -1150,7 +1084,7 @@ SPDX-License-Identifier: MIT
                 } else {
                     stuckCount = 0;
                 }
-                
+
                 // Check for convergence
                 if (Math.abs(minDist - lastDistance) < 0.0001) {
                     convergenceCount++;
@@ -1172,90 +1106,29 @@ SPDX-License-Identifier: MIT
                 } else {
                     convergenceCount = 0;
                 }
-                
+
                 lastDistance = minDist;
                 lastPoint = { ...currentPoint };
-                
+
                 trajectory.push({ ...currentPoint });
-                
+
                 // Stop if we've reached the end point
                 if (distToEnd < 0.01) {
                     break;
                 }
             }
-            
+
             return trajectory;
         }
-        
+
         // Initialize canvas elements
         const curveCanvas = document.getElementById('curveCanvas');
         const distanceFieldCanvas = document.getElementById('distanceFieldCanvas');
         const dynamicalCanvas = document.getElementById('dynamicalCanvas');
         const curveCtx = curveCanvas.getContext('2d');
         const dynamicalCtx = dynamicalCanvas.getContext('2d');
-        
-        // Initialize WebGL for distance field
-        const gl = distanceFieldCanvas.getContext('webgl');
-        if (!gl) {
-            alert('WebGL not supported in your browser');
-        }
-        
-        // Compile shader
-        function compileShader(gl, source, type) {
-            const shader = gl.createShader(type);
-            gl.shaderSource(shader, source);
-            gl.compileShader(shader);
-            
-            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
-                gl.deleteShader(shader);
-                return null;
-            }
-            
-            return shader;
-        }
-        
-        // Create shader program
-        const fragmentShaderSource = document.getElementById('distanceFieldFragmentShader').text;
-        const vertexShaderSource = `
-            attribute vec2 aPosition;
-            void main() {
-                gl_Position = vec4(aPosition, 0.0, 1.0);
-            }
-        `;
-        
-        const vertexShader = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
-        const fragmentShader = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
-        
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Program linking error:', gl.getProgramInfoLog(program));
-        }
-        
-        // Create a full-screen quad
-        const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-        const vertexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-        
-        const positionAttributeLocation = gl.getAttribLocation(program, 'aPosition');
-        gl.enableVertexAttribArray(positionAttributeLocation);
-        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
-        
-        // Get uniform locations
-        const p0Location = gl.getUniformLocation(program, 'p0');
-        const p1Location = gl.getUniformLocation(program, 'p1');
-        const p2Location = gl.getUniformLocation(program, 'p2');
-        const p3Location = gl.getUniformLocation(program, 'p3');
-        const p4Location = gl.getUniformLocation(program, 'p4');
-        const iResolutionLocation = gl.getUniformLocation(program, 'iResolution');
-        const clickPositionLocation = gl.getUniformLocation(program, 'clickPosition');
-        const showGradientLocation = gl.getUniformLocation(program, 'showGradient');
-        
+
+
         // Control points (normalized coordinates 0-1)
         const controlPoints = [
             { x: 0.1, y: 0.5, color: '#1f77b4', radius: 8, dragging: false },    // Q1
@@ -1264,21 +1137,36 @@ SPDX-License-Identifier: MIT
             { x: 0.7, y: 0.1, color: '#1f77b4', radius: 8, dragging: false },    // Q4
             { x: 0.9, y: 0.5, color: '#ff7f0e', radius: 8, dragging: false }     // Q5 (equilibrium point)
         ];
-        
+
         // Debug point for curve gradient visualization
         const debugPoint = { x: 0.5, y: 0.5, dragging: false };
-        
+
         // Click position for gradient visualization
         const clickPosition = { x: 0.5, y: 0.5 };
         let showGradient = false;
         let isDraggingGradientPoint = false;
 
 
+        // Initialize rendering for distance field
+        const distanceFieldrenderer = new GlslRenderer(distanceFieldCanvas);
+        distanceFieldrenderer.addLibrary("curve-shader-functions", document.querySelector("#curve-shader-functions").text);
+
+        distanceFieldrenderer.setUniform('p0', [controlPoints[0].x, controlPoints[0].y]);
+        distanceFieldrenderer.setUniform('p1', [controlPoints[1].x, controlPoints[1].y]);
+        distanceFieldrenderer.setUniform('p2', [controlPoints[2].x, controlPoints[2].y]);
+        distanceFieldrenderer.setUniform('p3', [controlPoints[3].x, controlPoints[3].y]);
+        distanceFieldrenderer.setUniform('p4', [controlPoints[4].x, controlPoints[4].y]);
+        distanceFieldrenderer.setUniform('clickPosition', [clickPosition.x, clickPosition.y]);
+        distanceFieldrenderer.setUniform('showGradient', showGradient);
+        distanceFieldrenderer.setup(document.querySelector("#distance-field-fragment-shader").text);
+
+
         // Start the flowfield rendering
-        const renderer = new GlslRenderer(document.querySelector("#flowfieldcanvas"));
+        const flowfieldrenderer = new GlslRenderer(document.querySelector("#flowfieldcanvas"));
+        flowfieldrenderer.addLibrary("curve-shader-functions", document.querySelector("#curve-shader-functions").text);
 
         // Flowfield shader
-        let flowfieldRenderTarget = renderer.createRenderTarget();
+        let flowfieldRenderTarget = flowfieldrenderer.createRenderTarget();
         flowfieldRenderTarget.setUniform('p0', [controlPoints[0].x, controlPoints[0].y]);
         flowfieldRenderTarget.setUniform('p1', [controlPoints[1].x, controlPoints[1].y]);
         flowfieldRenderTarget.setUniform('p2', [controlPoints[2].x, controlPoints[2].y]);
@@ -1288,17 +1176,17 @@ SPDX-License-Identifier: MIT
         flowfieldRenderTarget.setup(document.querySelector("#flowfield-fragment-shader").text);
 
         // LIC shader
-        let licRenderTarget = renderer.createRenderTarget();
+        let licRenderTarget = flowfieldrenderer.createRenderTarget();
         licRenderTarget.setup(document.querySelector("#lic-fragment-shader").text);
         licRenderTarget.setTextureFromRenderTarget("iChannel0", licRenderTarget);
         licRenderTarget.setTextureFromRenderTarget("iChannel1", flowfieldRenderTarget);
 
         // Main shader
-        renderer.setup(document.querySelector("#flowfield-main-fragment-shader").text);
-        renderer.setTextureFromRenderTarget("iChannel0", licRenderTarget);
-        renderer.setTextureFromRenderTarget("iChannel1", flowfieldRenderTarget);
+        flowfieldrenderer.setup(document.querySelector("#flowfield-main-fragment-shader").text);
+        flowfieldrenderer.setTextureFromRenderTarget("iChannel0", licRenderTarget);
+        flowfieldrenderer.setTextureFromRenderTarget("iChannel1", flowfieldRenderTarget);
 
-        
+
         // Function to convert normalized coordinates to canvas pixels
         function toCanvasCoords(point) {
             return {
@@ -1306,7 +1194,7 @@ SPDX-License-Identifier: MIT
                 y: (1 - point.y) * curveCanvas.height
             };
         }
-        
+
         // Function to convert canvas pixels to normalized coordinates
         function toNormalizedCoords(x, y) {
             return {
@@ -1314,17 +1202,17 @@ SPDX-License-Identifier: MIT
                 y: 1 - (y / curveCanvas.height)
             };
         }
-        
+
         // Function to check if a point is inside a control point
         function isPointInControlPoint(mouseX, mouseY, point) {
             const canvasCoords = toCanvasCoords(point);
             const distance = Math.sqrt(
-                Math.pow(mouseX - canvasCoords.x, 2) + 
+                Math.pow(mouseX - canvasCoords.x, 2) +
                 Math.pow(mouseY - canvasCoords.y, 2)
             );
             return distance <= point.radius;
         }
-        
+
         // Function to update all plots
         function updateAll() {
             drawBezierCurve();
@@ -1334,46 +1222,46 @@ SPDX-License-Identifier: MIT
             trajectory = computeTrajectory(streamPoint);
             drawDynamicalSystem();
         }
-        
+
         // Function to draw the bezier curve
         function drawBezierCurve() {
             const width = curveCanvas.width;
             const height = curveCanvas.height;
-            
+
             // Clear canvas
             curveCtx.clearRect(0, 0, width, height);
-            
+
             // Draw control lines
             curveCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
             curveCtx.lineWidth = 1;
             curveCtx.beginPath();
-            
+
             const q1 = toCanvasCoords(controlPoints[0]);
             const q2 = toCanvasCoords(controlPoints[1]);
             const q3 = toCanvasCoords(controlPoints[2]);
             const q4 = toCanvasCoords(controlPoints[3]);
             const q5 = toCanvasCoords(controlPoints[4]);
-            
+
             // Draw control lines for first segment
             curveCtx.moveTo(q1.x, q1.y);
             curveCtx.lineTo(q2.x, q2.y);
             curveCtx.lineTo(q3.x, q3.y);
-            
+
             // Draw control lines for second segment
             curveCtx.moveTo(q3.x, q3.y);
             curveCtx.lineTo(q4.x, q4.y);
             curveCtx.lineTo(q5.x, q5.y);
-            
+
             curveCtx.stroke();
-            
+
             // Draw bezier curves
             curveCtx.strokeStyle = 'black';
             curveCtx.lineWidth = 3;
-            
+
             // First quadratic bezier curve (Q1, Q2, Q3)
             curveCtx.beginPath();
             curveCtx.moveTo(q1.x, q1.y);
-            
+
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
                 const y = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
@@ -1381,11 +1269,11 @@ SPDX-License-Identifier: MIT
                 curveCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
             curveCtx.stroke();
-            
+
             // Second quadratic bezier curve (Q3, Q4, Q5)
             curveCtx.beginPath();
             curveCtx.moveTo(q3.x, q3.y);
-            
+
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
                 const y = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
@@ -1393,42 +1281,31 @@ SPDX-License-Identifier: MIT
                 curveCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
             curveCtx.stroke();
-            
+
             // Draw control points
             controlPoints.forEach(point => {
                 const canvasCoords = toCanvasCoords(point);
-                
+
                 curveCtx.fillStyle = point.color;
                 curveCtx.beginPath();
                 curveCtx.arc(canvasCoords.x, canvasCoords.y, point.radius, 0, Math.PI * 2);
                 curveCtx.fill();
-                
+
                 curveCtx.strokeStyle = 'white';
                 curveCtx.lineWidth = 2;
                 curveCtx.stroke();
             });
         }
-        
+
         // Function to update distance field
         function updateDistanceField() {
-            gl.viewport(0, 0, distanceFieldCanvas.width, distanceFieldCanvas.height);
-            gl.clearColor(0, 0, 0, 1);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-            
-            gl.useProgram(program);
-            
-            // Set uniforms
-            gl.uniform2f(p0Location, controlPoints[0].x, controlPoints[0].y);
-            gl.uniform2f(p1Location, controlPoints[1].x, controlPoints[1].y);
-            gl.uniform2f(p2Location, controlPoints[2].x, controlPoints[2].y);
-            gl.uniform2f(p3Location, controlPoints[3].x, controlPoints[3].y);
-            gl.uniform2f(p4Location, controlPoints[4].x, controlPoints[4].y);
-            gl.uniform2f(iResolutionLocation, distanceFieldCanvas.width, distanceFieldCanvas.height);
-            gl.uniform2f(clickPositionLocation, clickPosition.x, clickPosition.y);
-            gl.uniform1i(showGradientLocation, showGradient ? 1 : 0);
-            
-            // Draw
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            distanceFieldrenderer.setUniform('p0', [controlPoints[0].x, controlPoints[0].y]);
+            distanceFieldrenderer.setUniform('p1', [controlPoints[1].x, controlPoints[1].y]);
+            distanceFieldrenderer.setUniform('p2', [controlPoints[2].x, controlPoints[2].y]);
+            distanceFieldrenderer.setUniform('p3', [controlPoints[3].x, controlPoints[3].y]);
+            distanceFieldrenderer.setUniform('p4', [controlPoints[4].x, controlPoints[4].y]);
+            distanceFieldrenderer.setUniform('clickPosition', [clickPosition.x, clickPosition.y]);
+            distanceFieldrenderer.setUniform('showGradient', showGradient);
         }
 
         // Function to update flow field
@@ -1442,69 +1319,71 @@ SPDX-License-Identifier: MIT
             const lambda = parseFloat(document.getElementById('lambdaSlider').value);
             flowfieldRenderTarget.setUniform('lambda', lambda);
         }
-        
+
         // Function to draw dynamical system field
         function drawDynamicalSystem() {
             const width = dynamicalCanvas.width;
             const height = dynamicalCanvas.height;
-            
+
             // Get lambda value from slider
             const lambda = parseFloat(document.getElementById('lambdaSlider').value);
-            
+
             // Clear canvas
             dynamicalCtx.clearRect(0, 0, width, height);
-            
+
             // Draw bezier curves
             dynamicalCtx.strokeStyle = 'red';
             dynamicalCtx.lineWidth = 3;
-            
+
             // First quadratic bezier curve (Q1, Q2, Q3)
             dynamicalCtx.beginPath();
             const q1 = toCanvasCoords(controlPoints[0]);
             const q2 = toCanvasCoords(controlPoints[1]);
             const q3 = toCanvasCoords(controlPoints[2]);
-            
+
             dynamicalCtx.moveTo(q1.x, q1.y);
-            
+
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[0].x + 2*(1-t)*t*controlPoints[1].x + t*t*controlPoints[2].x;
                 const y = (1-t)*(1-t)*controlPoints[0].y + 2*(1-t)*t*controlPoints[1].y + t*t*controlPoints[2].y;
                 const canvasCoords = toCanvasCoords({x, y});
                 dynamicalCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
+            dynamicalCtx.lineTo(q3.x, q3.y);
             dynamicalCtx.stroke();
-            
+
             // Second quadratic bezier curve (Q3, Q4, Q5)
             dynamicalCtx.beginPath();
             const q4 = toCanvasCoords(controlPoints[3]);
             const q5 = toCanvasCoords(controlPoints[4]);
-            
+
             dynamicalCtx.moveTo(q3.x, q3.y);
-            
+
             for (let t = 0; t <= 1; t += 0.01) {
                 const x = (1-t)*(1-t)*controlPoints[2].x + 2*(1-t)*t*controlPoints[3].x + t*t*controlPoints[4].x;
                 const y = (1-t)*(1-t)*controlPoints[2].y + 2*(1-t)*t*controlPoints[3].y + t*t*controlPoints[4].y;
                 const canvasCoords = toCanvasCoords({x, y});
                 dynamicalCtx.lineTo(canvasCoords.x, canvasCoords.y);
             }
+            dynamicalCtx.lineTo(q5.x, q5.y);
             dynamicalCtx.stroke();
-            
+
             // Draw trajectory if it exists
             if (trajectory.length > 0) {
                 dynamicalCtx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
                 dynamicalCtx.lineWidth = 2;
                 dynamicalCtx.beginPath();
-                
+
                 const start = toCanvasCoords(trajectory[0]);
                 dynamicalCtx.moveTo(start.x, start.y);
-                
+
                 for (let i = 1; i < trajectory.length; i++) {
                     const point = toCanvasCoords(trajectory[i]);
                     dynamicalCtx.lineTo(point.x, point.y);
                 }
-                
+
                 dynamicalCtx.stroke();
-                
+
                 // Draw trajectory points
                 trajectory.forEach((point, index) => {
                     const canvasCoords = toCanvasCoords(point);
@@ -1514,14 +1393,14 @@ SPDX-License-Identifier: MIT
                     dynamicalCtx.fill();
                 });
             }
-            
+
             // Draw stream plot point
             const streamCanvasCoords = toCanvasCoords(streamPoint);
             dynamicalCtx.fillStyle = 'rgba(255, 0, 255, 0.8)';
             dynamicalCtx.beginPath();
             dynamicalCtx.arc(streamCanvasCoords.x, streamCanvasCoords.y, 6, 0, Math.PI * 2);
             dynamicalCtx.fill();
-            
+
             dynamicalCtx.strokeStyle = 'white';
             dynamicalCtx.lineWidth = 2;
             dynamicalCtx.stroke();
@@ -1532,60 +1411,60 @@ SPDX-License-Identifier: MIT
             dynamicalCtx.beginPath();
             dynamicalCtx.arc(eqPoint.x, eqPoint.y, 8, 0, Math.PI * 2);
             dynamicalCtx.fill();
-            
+
             dynamicalCtx.strokeStyle = 'white';
             dynamicalCtx.lineWidth = 2;
             dynamicalCtx.stroke();
         }
-        
+
         // Add mouse event handlers for stream plot point
         dynamicalCanvas.addEventListener('mousedown', (e) => {
             const rect = dynamicalCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Check if mouse is near stream point
             const streamCanvasCoords = toCanvasCoords(streamPoint);
             const distance = Math.sqrt(
-                Math.pow(mouseX - streamCanvasCoords.x, 2) + 
+                Math.pow(mouseX - streamCanvasCoords.x, 2) +
                 Math.pow(mouseY - streamCanvasCoords.y, 2)
             );
-            
+
             if (distance <= 10) {
                 streamPoint.dragging = true;
             }
         });
-        
+
         dynamicalCanvas.addEventListener('mousemove', (e) => {
             if (streamPoint.dragging) {
                 const rect = dynamicalCanvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                
+
                 // Convert to normalized coordinates and update point
                 const normalized = toNormalizedCoords(mouseX, mouseY);
                 streamPoint.x = Math.max(0, Math.min(1, normalized.x));
                 streamPoint.y = Math.max(0, Math.min(1, normalized.y));
-                
+
                 // Compute new trajectory
                 trajectory = computeTrajectory(streamPoint);
-                
+
                 // Update all visualizations
                 updateAll();
             }
         });
-        
+
         dynamicalCanvas.addEventListener('mouseup', () => {
             streamPoint.dragging = false;
         });
-        
+
         dynamicalCanvas.addEventListener('mouseleave', () => {
             streamPoint.dragging = false;
         });
-        
+
         // Add touch support for stream plot point
         dynamicalCanvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -1593,22 +1472,22 @@ SPDX-License-Identifier: MIT
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Check if touch is near stream point
             const streamCanvasCoords = toCanvasCoords(streamPoint);
             const distance = Math.sqrt(
-                Math.pow(mouseX - streamCanvasCoords.x, 2) + 
+                Math.pow(mouseX - streamCanvasCoords.x, 2) +
                 Math.pow(mouseY - streamCanvasCoords.y, 2)
             );
-            
+
             if (distance <= 10) {
                 streamPoint.dragging = true;
             }
         });
-        
+
         dynamicalCanvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (streamPoint.dragging) {
@@ -1616,30 +1495,30 @@ SPDX-License-Identifier: MIT
                 const touch = e.touches[0];
                 const mouseX = touch.clientX - rect.left;
                 const mouseY = touch.clientY - rect.top;
-                
+
                 // Convert to normalized coordinates and update point
                 const normalized = toNormalizedCoords(mouseX, mouseY);
                 streamPoint.x = Math.max(0, Math.min(1, normalized.x));
                 streamPoint.y = Math.max(0, Math.min(1, normalized.y));
-                
+
                 // Compute new trajectory
                 trajectory = computeTrajectory(streamPoint);
-                
+
                 // Update all visualizations
                 updateAll();
             }
         });
-        
+
         dynamicalCanvas.addEventListener('touchend', () => {
             streamPoint.dragging = false;
         });
-        
+
         // Add mouse event handlers for control points
         curveCanvas.addEventListener('mousedown', (e) => {
             const rect = curveCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             // Check if mouse is inside any control point
             controlPoints.forEach(point => {
                 if (isPointInControlPoint(mouseX, mouseY, point)) {
@@ -1647,15 +1526,15 @@ SPDX-License-Identifier: MIT
                 }
             });
         });
-        
+
         curveCanvas.addEventListener('mousemove', (e) => {
             const rect = curveCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Update dragging control points
             let anyDragging = false;
             controlPoints.forEach((point, index) => {
@@ -1666,7 +1545,7 @@ SPDX-License-Identifier: MIT
                         const dy = normalized.y - point.y;
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q4 to maintain C1 continuity
                         controlPoints[3].x = Math.max(0, Math.min(1, controlPoints[2].x - (point.x - controlPoints[2].x)));
                         controlPoints[3].y = Math.max(0, Math.min(1, controlPoints[2].y - (point.y - controlPoints[2].y)));
@@ -1675,7 +1554,7 @@ SPDX-License-Identifier: MIT
                         const dy = normalized.y - point.y;
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q2 to maintain C1 continuity
                         controlPoints[1].x = Math.max(0, Math.min(1, controlPoints[2].x - (point.x - controlPoints[2].x)));
                         controlPoints[1].y = Math.max(0, Math.min(1, controlPoints[2].y - (point.y - controlPoints[2].y)));
@@ -1683,17 +1562,17 @@ SPDX-License-Identifier: MIT
                         // When moving Q3, maintain C1 continuity by updating both Q2 and Q4
                         const dx = normalized.x - point.x;
                         const dy = normalized.y - point.y;
-                        
+
                         // Calculate new positions for Q2 and Q4 to maintain the constraint
                         const newQ2x = controlPoints[1].x + dx;
                         const newQ2y = controlPoints[1].y + dy;
                         const newQ4x = controlPoints[3].x + dx;
                         const newQ4y = controlPoints[3].y + dy;
-                        
+
                         // Update Q3
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q2 and Q4 while maintaining the constraint
                         controlPoints[1].x = Math.max(0, Math.min(1, newQ2x));
                         controlPoints[1].y = Math.max(0, Math.min(1, newQ2y));
@@ -1706,24 +1585,24 @@ SPDX-License-Identifier: MIT
                     anyDragging = true;
                 }
             });
-            
+
             if (anyDragging) {
                 updateAll();
             }
         });
-        
+
         curveCanvas.addEventListener('mouseup', () => {
             controlPoints.forEach(point => {
                 point.dragging = false;
             });
         });
-        
+
         curveCanvas.addEventListener('mouseleave', () => {
             controlPoints.forEach(point => {
                 point.dragging = false;
             });
         });
-        
+
         // Add touch support for control points
         curveCanvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -1731,7 +1610,7 @@ SPDX-License-Identifier: MIT
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
-            
+
             // Check if touch is inside any control point
             controlPoints.forEach(point => {
                 if (isPointInControlPoint(mouseX, mouseY, point)) {
@@ -1739,17 +1618,17 @@ SPDX-License-Identifier: MIT
                 }
             });
         });
-        
+
         curveCanvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const rect = curveCanvas.getBoundingClientRect();
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Update dragging control points
             let anyDragging = false;
             controlPoints.forEach((point, index) => {
@@ -1760,7 +1639,7 @@ SPDX-License-Identifier: MIT
                         const dy = normalized.y - point.y;
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q4 to maintain C1 continuity
                         controlPoints[3].x = Math.max(0, Math.min(1, controlPoints[2].x - (point.x - controlPoints[2].x)));
                         controlPoints[3].y = Math.max(0, Math.min(1, controlPoints[2].y - (point.y - controlPoints[2].y)));
@@ -1769,7 +1648,7 @@ SPDX-License-Identifier: MIT
                         const dy = normalized.y - point.y;
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q2 to maintain C1 continuity
                         controlPoints[1].x = Math.max(0, Math.min(1, controlPoints[2].x - (point.x - controlPoints[2].x)));
                         controlPoints[1].y = Math.max(0, Math.min(1, controlPoints[2].y - (point.y - controlPoints[2].y)));
@@ -1777,17 +1656,17 @@ SPDX-License-Identifier: MIT
                         // When moving Q3, maintain C1 continuity by updating both Q2 and Q4
                         const dx = normalized.x - point.x;
                         const dy = normalized.y - point.y;
-                        
+
                         // Calculate new positions for Q2 and Q4 to maintain the constraint
                         const newQ2x = controlPoints[1].x + dx;
                         const newQ2y = controlPoints[1].y + dy;
                         const newQ4x = controlPoints[3].x + dx;
                         const newQ4y = controlPoints[3].y + dy;
-                        
+
                         // Update Q3
                         point.x = Math.max(0, Math.min(1, normalized.x));
                         point.y = Math.max(0, Math.min(1, normalized.y));
-                        
+
                         // Update Q2 and Q4 while maintaining the constraint
                         controlPoints[1].x = Math.max(0, Math.min(1, newQ2x));
                         controlPoints[1].y = Math.max(0, Math.min(1, newQ2y));
@@ -1800,57 +1679,57 @@ SPDX-License-Identifier: MIT
                     anyDragging = true;
                 }
             });
-            
+
             if (anyDragging) {
                 updateAll();
             }
         });
-        
+
         curveCanvas.addEventListener('touchend', () => {
             controlPoints.forEach(point => {
                 point.dragging = false;
             });
         });
-        
+
         // Add mouse event handlers for distance field
         distanceFieldCanvas.addEventListener('mousedown', (e) => {
             const rect = distanceFieldCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Update click position and show gradient
             clickPosition.x = normalized.x;
             clickPosition.y = normalized.y;
             showGradient = true;
-            
+
             updateAll();
         });
-        
+
         distanceFieldCanvas.addEventListener('mousemove', (e) => {
             if (e.buttons === 1) { // Only if left mouse button is pressed
                 const rect = distanceFieldCanvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                
+
                 // Convert to normalized coordinates
                 const normalized = toNormalizedCoords(mouseX, mouseY);
-                
+
                 // Update click position
                 clickPosition.x = normalized.x;
                 clickPosition.y = normalized.y;
-                
+
                 updateAll();
             }
         });
-        
+
         distanceFieldCanvas.addEventListener('mouseup', () => {
             showGradient = false;
             updateAll();
         });
-        
+
         // Add touch support for distance field
         distanceFieldCanvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -1858,49 +1737,49 @@ SPDX-License-Identifier: MIT
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Update click position and show gradient
             clickPosition.x = normalized.x;
             clickPosition.y = normalized.y;
             showGradient = true;
-            
+
             updateAll();
         });
-        
+
         distanceFieldCanvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const rect = distanceFieldCanvas.getBoundingClientRect();
             const touch = e.touches[0];
             const mouseX = touch.clientX - rect.left;
             const mouseY = touch.clientY - rect.top;
-            
+
             // Convert to normalized coordinates
             const normalized = toNormalizedCoords(mouseX, mouseY);
-            
+
             // Update click position
             clickPosition.x = normalized.x;
             clickPosition.y = normalized.y;
-            
+
             updateAll();
         });
-        
+
         distanceFieldCanvas.addEventListener('touchend', () => {
             showGradient = false;
             updateAll();
         });
-        
+
         // Add event listener for lambda slider
         const lambdaSlider = document.getElementById('lambdaSlider');
         const lambdaValue = document.getElementById('lambdaValue');
-        
+
         lambdaSlider.addEventListener('input', () => {
             lambdaValue.textContent = lambdaSlider.value;
             updateAll();
         });
-        
+
         // Initial draw
         trajectory = computeTrajectory(streamPoint);
         updateAll();

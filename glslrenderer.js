@@ -1,3 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: Copyright © 2025 Idiap Research Institute <contact@idiap.ch>
+ *
+ * SPDX-FileContributor: Philip Abbet <philip.abbet@idiap.ch>
+ *
+ * SPDX-License-Identifier: MIT
+*/
+
 "use strict";
 
 class GlslRenderer
@@ -13,8 +21,10 @@ class GlslRenderer
             return;
         }
 
-        this.finalRenderTarget = new RenderTarget(this.gl, () => { this._reset(); }, false);
+        this.finalRenderTarget = new RenderTarget(this, this.gl, false);
         this.renderTargets = [];
+
+        this.libraries = new Map();
 
         this.geometrybuffer = null;
 
@@ -73,9 +83,14 @@ class GlslRenderer
         if (width < 0)
             width = this.gl.canvas.width;
 
-        let renderTarget = new RenderTarget(this.gl, () => { this._reset(); }, true, height, width);
+        let renderTarget = new RenderTarget(this, this.gl, true, height, width);
         this.renderTargets.push(renderTarget);
         return renderTarget;
+    }
+
+    addLibrary(name, source)
+    {
+        this.libraries.set(name, source);
     }
 
     setup(fragmentShaderSource, declarations={})
@@ -218,7 +233,7 @@ class Buffer
             // Create the framebuffer
             this.framebuffers[i] = gl.createFramebuffer();
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[i]);
- 
+
             // Attach the texture as the first color attachment
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[i], 0);
 
@@ -239,8 +254,9 @@ class Input
 
 class RenderTarget
 {
-    constructor(gl, resetCallback, useFrameBuffer, height, width)
+    constructor(renderer, gl, useFrameBuffer, height, width)
     {
+        this.renderer = renderer;
         this.gl = gl;
         this.program = null;
 
@@ -258,8 +274,6 @@ class RenderTarget
         this.geometryLocation = null;
 
         this.inputs = {};
-
-        this.resetCallback = resetCallback;
 
         // Only for render-to-texture
         this.outputBuffer = null;
@@ -333,6 +347,24 @@ class RenderTarget
 
         offset = _insertText(declaration, offset);
 
+        // Insert the libraries
+        offset = fragmentShaderSource.indexOf('#include');
+        while (offset != -1)
+        {
+            const end = fragmentShaderSource.indexOf('\n', offset);
+            let line = fragmentShaderSource.substring(offset, end);
+            let library = line.replace('#include ', '');
+
+            let code = '';
+            if (this.renderer.libraries.has(library))
+                code = this.renderer.libraries.get(library);
+
+            fragmentShaderSource = fragmentShaderSource.substring(0, offset) + code + fragmentShaderSource.substring(end);
+
+            offset = fragmentShaderSource.indexOf('#include');
+        }
+
+        // Add the main function
         fragmentShaderSource += `
 
         out vec4 fragColor;
@@ -366,7 +398,7 @@ class RenderTarget
         // Retrieve the location of the position buffer
         this.geometryLocation = this.gl.getAttribLocation(this.program, "a_position");
 
-        this.resetCallback();
+        this.renderer._reset();
     }
 
     setUniform(name, value)
@@ -407,7 +439,7 @@ class RenderTarget
         else
             this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.R8, width, height, 0, this.gl.R8, this.gl.UNSIGNED_BYTE, data);
 
-        this.resetCallback();
+        this.renderer._reset();
     }
 
     loadTexture(name, url, useFiltering=true)
@@ -433,7 +465,7 @@ class RenderTarget
         if (this.program != null)
             input.location = this.gl.getUniformLocation(this.program, name);
 
-        this.resetCallback();
+        this.renderer._reset();
     }
 
     render(uniforms, geometryBuffer)
