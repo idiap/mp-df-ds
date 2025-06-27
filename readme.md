@@ -44,6 +44,18 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 | `run_LASA.py` | Run experiments on the LASA dataset (requires [pylasadataset](https://github.com/justagist/pyLasaDataset)) 
 ---
 
+## Citation
+
+If you find this work useful in your research, please cite:
+
+```bibtex
+@article{Li25arXiv,
+	author={Li, Y. and Calinon, S.},
+	title={From Movement Primitives to Distance Fields to Dynamical Systems},
+	journal={arXiv:2504.09705},
+	year={2025}
+}
+```
 
 This code is maintained by Yiming LI and licensed under the MIT License.
 
