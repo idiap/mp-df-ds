@@ -59,7 +59,9 @@ if __name__ == "__main__":
     # plot gradient
 
     pts = torch.tensor([[4.0, 4.0]],device=device)
+    # pts = torch.tensor([[10.0, 2.0],[-10.0, 10.0],[10.0, -14.0],[-1.0,-4.0]],device=device)
     dist, grad, t = curve.sdf_batch(pts, w_b)
+    
     curve_grad = curve.quadractic_bezier_curve_grad_batch(t,w_b)
     norm_curve_grad = curve_grad / torch.norm(curve_grad,dim=-1,keepdim=True)
     closest_point = curve.quadractic_bezier_curve_batch(t, w_b)
@@ -106,9 +108,13 @@ if __name__ == "__main__":
         p_next,_ = dynamical_system_single_step(curve,pts,w_b)
         p_list.append(p_next)
         pts = p_next
-    p_list = torch.stack(p_list,dim=0).squeeze(1)
-    axes[2].plot(p_list[:,0].cpu().numpy(),p_list[:,1].cpu().numpy(), "-", linewidth=2,color="red")
-    axes[2].plot(p_list[0,0].cpu().numpy(),p_list[0,1].cpu().numpy(), "o", markersize=10,color="red")
-    axes[2].plot(p_list[-1,0].cpu().numpy(),p_list[-1,1].cpu().numpy(), "o", markersize=10,color="black")
+    p_list = torch.stack(p_list,dim=0).transpose(0,1)
+    # dist, grad, t = curve.sdf_batch(p_list[0], w_b)
+    # t_continuous = curve.decode_time(t)
+    # print(t_continuous)
+    for points in p_list:
+        axes[2].plot(points[:,0].cpu().numpy(),points[:,1].cpu().numpy(), "-", linewidth=2,color="red")
+        axes[2].plot(points[0,0].cpu().numpy(),points[0,1].cpu().numpy(), "o", markersize=10,color="red")
+        axes[2].plot(points[-1,0].cpu().numpy(),points[-1,1].cpu().numpy(), "o", markersize=10,color="black")
         
     plt.show()

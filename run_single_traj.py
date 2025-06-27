@@ -34,6 +34,9 @@ if __name__ == "__main__":
     p = torch.stack([x.flatten(), y.flatten()], dim=1).to(device)
     
     dist, grad, t = curve.sdf_batch(p.reshape(-1,2), w_b)
+    t_continuous = curve.decode_time(t)
+    print(t_continuous.shape)
+
     dist_np, grad_np = dist.cpu().numpy(), grad.cpu().numpy()
 
     # Dynamical system
@@ -48,19 +51,24 @@ if __name__ == "__main__":
         ax.set_aspect('equal')
         ax.axis('square')
 
-    # Plot reconstructed trajectory
-    axes[0].plot(trajectory[:,0].cpu().numpy(),trajectory[:,1].cpu().numpy(),linewidth=2, c='black')
+    # Plot reconstructed trajectory with gradient color
+    points = trajectory.cpu().numpy()
+    for i in range(len(points)-1):
+        # Create a gradient from blue to red
+        color = plt.cm.viridis(i/len(points))
+        axes[0].plot(points[i:i+2,0], points[i:i+2,1], linewidth=2, color=color)
+        axes[1].plot(points[i:i+2,0], points[i:i+2,1], linewidth=2, color=color)
+        axes[2].plot(points[i:i+2,0], points[i:i+2,1], linewidth=2, color=color)
+    
     # Plot control points
     axes[0].plot(w_no_constraint[:,0].cpu().numpy(),w_no_constraint[:,1].cpu().numpy(),"o-",markersize=3,color="#1f77b4")
     # Plot original data
     axes[0].plot(pos[:,0].cpu().numpy(),pos[:,1].cpu().numpy(),"x",markersize=3,color="red")   # original data
     axes[0].set_aspect('equal')  # Ensure equal scaling
 
-    axes[1].plot(trajectory[:,0].cpu().numpy(),trajectory[:,1].cpu().numpy(),linewidth=2, c='black')
     axes[1].contourf(x.cpu().numpy(), y.cpu().numpy(), dist_np.reshape(50,50), cmap='coolwarm')
     axes[1].set_aspect('equal')
 
-    axes[2].plot(trajectory[:,0].cpu().numpy(),trajectory[:,1].cpu().numpy(),linewidth=2, c='black')
     axes[2].streamplot(
         x.cpu().numpy()[::3, ::3].T,
         y.cpu().numpy()[::3, ::3].T,

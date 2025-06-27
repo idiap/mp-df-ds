@@ -6,7 +6,7 @@
 
 import torch
 import matplotlib.pyplot as plt
-from quadratic_spline import QuadraticSpline,multi_traj_dynamical_system_single_step
+from quadratic_spline import QuadraticSpline,multi_traj_dynamical_system_single_step,multi_traj_dynamical_system_single_step
 import numpy as np
 import os
     
@@ -58,8 +58,7 @@ if __name__ == "__main__":
     axes[0].plot(w_mean_no_constraint[:,0].cpu().numpy(),w_mean_no_constraint[:,1].cpu().numpy(),"o-",markersize=5,color="#1f77b4")
 
     # Distance Field
-    dist, grad, t = curve.multi_traj_sdf_batch(p,w_list)
-
+    dist, grad, t ,_,_ = curve.multi_traj_sdf_batch(p,w_list)
     # Dynamical system
     p_next,vec_field = multi_traj_dynamical_system_single_step(curve,p,w_list)
 
@@ -68,13 +67,14 @@ if __name__ == "__main__":
     axes[1].set_aspect('equal')
 
     # specific point shooting
-    pts = torch.tensor([[4.0, 4.0]],device=device)
+    pts = torch.tensor([[5.0, 5.0]],device=device)
     p_list = []
     for i in range(500):
         p_next,_ = multi_traj_dynamical_system_single_step(curve,pts,w_list)
         p_list.append(p_next)
         pts = p_next
     p_list = torch.stack(p_list,dim=0).squeeze(1)
+    
     axes[2].plot(p_list[:,0].cpu().numpy(),p_list[:,1].cpu().numpy(), "-", linewidth=2,color="red")
     axes[2].plot(p_list[0,0].cpu().numpy(),p_list[0,1].cpu().numpy(), "o", markersize=10,color="red")
     axes[2].plot(p_list[-1,0].cpu().numpy(),p_list[-1,1].cpu().numpy(), "o", markersize=10,color="black")

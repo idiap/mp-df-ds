@@ -203,8 +203,8 @@ class QuadraticSpline:
     def quadractic_bezier_curve_grad_batch(self,t_batch,W):
         w_decode = self.decode_w(W).reshape(self.nbFct*self.nbSeg,-1)
         # Dynamical system
-        t_int = t_batch.int()
-        # exit()
+        t_int = (t_batch).int()
+    
         t_int[t_int== w_decode.shape[0] - 2] = t_int[t_int== w_decode.shape[0] - 2] - 1
 
         expand_wb = w_decode.unsqueeze(0).expand(t_batch.shape[0],-1,-1)
@@ -282,14 +282,13 @@ class QuadraticSpline:
         # Gather results
         batch_idx = torch.arange(B, device=W.device).view(B, 1, 1).expand(-1, N, 1)
         point_idx = torch.arange(N, device=W.device).view(1, N, 1).expand(B, -1, 1)
-        tmin = t_candidates.gather(-1, best_idx.unsqueeze(-1)).squeeze(-1)  # (B, N)
+        tmin = t_candidates.gather(-1, best_idx.unsqueeze(-1)).squeeze(-1)  # (B, N)   #tmin is in [0,1]
         # Add segment index to tmin
-        tmin = tmin + 3.0*torch.arange(B,device=W.device).view(B,1).expand(-1,N)
+        tmin = tmin + 3.0*torch.arange(B,device=W.device).view(B,1).expand(-1,N) #tmin is in [0,3*nbSeg]
         p_closest = p_curve[batch_idx, point_idx, best_idx.unsqueeze(-1)].squeeze(-2)  # (B, N, 2)
         
         # Compute gradient (normal vector)
         grad = p_closest - p.unsqueeze(0)  # (B, N, 2)
-        
         return min_dist, grad, tmin
 
     def sdf(self,p,w):
@@ -322,29 +321,75 @@ class QuadraticSpline:
         grad = torch.nn.functional.normalize(grad,dim=-1)
         t = tmin[dist_idx,torch.arange(len(p))]
         return dist,grad,t
-
+    
     def multi_traj_sdf_batch(self,p,w_list):
-        dist_list,grad_list,t_list = [],[],[]
-        for w in w_list:
-            dist,grad,t = self.sdf_batch(p,w)
-            dist_list.append(dist)
-            grad_list.append(grad)
-            t_list.append(t)
-        dist,dist_idx = torch.min(torch.stack(dist_list,dim=0),dim=0)
-        grad = torch.stack(grad_list,dim=0)
+        w_decode = torch.cat( [self.decode_w(w) for w in w_list],dim=0)
+        dist,grad,tmin = self.quadratic_bezier_curve_sdf_batch(w_decode, p)
+        dist,dist_idx = torch.min(dist,dim=0)
         grad = grad[dist_idx,torch.arange(len(p)),:]
         grad = torch.nn.functional.normalize(grad,dim=-1)
-        t = torch.stack(t_list,dim=0)
-        t = t[dist_idx,torch.arange(len(p))]
-        return dist,grad,t
+        t_seg = tmin[dist_idx,torch.arange(len(p))] % (self.nbSeg*self.nbFct)    #[0,self.nbSeg*self.nbFct-2]
+        t_batch = tmin[dist_idx,torch.arange(len(p))] // (self.nbSeg*self.nbFct)    #[0,len(w_list)-1]
+        t_batch = t_batch.int()
+        w_decode_reshaped = w_decode.reshape(len(w_list),self.nbSeg*self.nbFct,-1)
+        # 
+        t_int = (t_seg).int()
+    
+        t_int[t_int== w_decode_reshaped.shape[1] - 2] = t_int[t_int== w_decode_reshaped.shape[1] - 2] - 1
 
+        expand_wb = w_decode_reshaped.unsqueeze(0).expand(t_seg.shape[0],-1,-1,-1)
+  
+        ctrl_points = (expand_wb[torch.arange(t_seg.shape[0]),t_batch,t_int],
+                    expand_wb[torch.arange(t_seg.shape[0]),t_batch,t_int+1],
+                    expand_wb[torch.arange(t_seg.shape[0]),t_batch,t_int+2])
+        curve = self.quadratic_bezier_curve(t_seg - t_int, ctrl_points)
+        curve_grad = self.quadratic_bezier_curve_grad(t_seg - t_int, ctrl_points)
+        return dist,grad,t_seg,curve,curve_grad
+    
+    def decode_time(self, t_batch):
+        """
+        Convert discontinuous time segments to continuous time.
+        
+        Args:
+            t_batch: Tensor containing discontinuous time values
+                     Format: [0, 0.1, ..., 1.0, 3.0, 3.1, ..., 4.0, 6.0, 6.1, ..., 7.0, ...]
+                     Each segment spans 3 time units (nbFct=3) and contains values 0 to 1
+        
+        Returns:
+            t_continuous: Tensor with continuous time values
+                         Format: [0, 0.1, ..., 1.0, 1.1, 1.2, ..., 2.0, 2.1, 2.2, ..., 3.0, ...]
+        """
+        # Calculate which segment each time point belongs to
+        # Each segment spans 3 time units (nbFct=3), so segment 0: [0-3), segment 1: [3-6), etc.
+        segment_index = (t_batch // self.nbFct).long()
+        
+        # Extract the local time within each segment (normalized to 0-1)
+        # This gives us the fractional position within the current segment
+        local_time_within_segment = t_batch % 1.0
+        
+        # Combine segment index and local time to create continuous time
+        # segment_index gives us the integer part, local_time_within_segment gives us the fractional part
+        t_continuous = segment_index + local_time_within_segment
+        
+        # Handle special case: the very end point of the trajectory
+        # When t_batch equals (nbSeg-1)*nbFct+1, we want the continuous time to be nbSeg
+        end_point_condition = t_batch == (self.nbSeg - 1) * self.nbFct + 1
+        t_continuous = torch.where(
+            end_point_condition,
+            torch.tensor(self.nbSeg, device=t_batch.device, dtype=t_batch.dtype),
+            t_continuous
+        )
+        
+        return t_continuous
 
-def dynamical_system_single_step(curve,p,w,lambda_dist=0.5,step_size=0.1):
+def dynamical_system_single_step(curve,p,w,lambda_dist=0.5,step_size=0.1,dist_threshold=0.0):
     dist,grad,t = curve.sdf_batch(p,w)
 
     curve_grad = curve.quadractic_bezier_curve_grad_batch(t,w)*0.1
     # Compute barrier function
-    barrier = 1.0/(1 + lambda_dist*dist+1e-6)
+    barrier = 1.0/(1 + lambda_dist*torch.abs(dist-dist_threshold)+1e-6)
+    mask = dist<dist_threshold
+    grad[mask] = grad[mask]*0.5
     # Combine trajectory and gradient fields
     vec = curve_grad * barrier.unsqueeze(-1) + grad * (1-barrier).unsqueeze(-1)
     vec = torch.nn.functional.normalize(vec,dim=-1)
@@ -352,29 +397,43 @@ def dynamical_system_single_step(curve,p,w,lambda_dist=0.5,step_size=0.1):
     p_next = p + vec*step_size
     return p_next, vec
 
+# def multi_traj_dynamical_system_single_step(curve,p,w_list,lambda_dist=0.5,step_size=0.1):
+
+#     p_next_list, vec_field_list = [],[]
+#     dist_list,grad_list,t_list = [],[],[]
+#     for w in w_list:
+#         dist,grad,t = curve.sdf_batch(p,w)
+#         dist_list.append(dist)
+#         grad_list.append(grad)
+#         t_list.append(t)
+#         curve_grad = curve.quadractic_bezier_curve_grad_batch(t,w)*0.1
+#         # Compute barrier function
+#         barrier = 1.0/(1 + lambda_dist*dist+1e-6)
+#         # Combine trajectory and gradient fields
+#         vec = curve_grad * barrier.unsqueeze(-1) + grad * (1-barrier).unsqueeze(-1)
+#         vec = torch.nn.functional.normalize(vec,dim=-1)
+#         p_next = p + vec*step_size
+#         p_next_list.append(p_next)
+#         vec_field_list.append(vec)
+
+#     dist,dist_idx = torch.min(torch.stack(dist_list,dim=0),dim=0)
+#     p_next = torch.stack(p_next_list,dim=0)
+#     p_next = p_next[dist_idx,torch.arange(len(p)),:]
+#     vec_field = torch.stack(vec_field_list,dim=0)
+#     vec_field = vec_field[dist_idx,torch.arange(len(p)),:]
+#     vec_field = torch.nn.functional.normalize(vec_field,dim=-1)
+#     return p_next, vec_field
+
 def multi_traj_dynamical_system_single_step(curve,p,w_list,lambda_dist=0.5,step_size=0.1):
 
-    p_next_list, vec_field_list = [],[]
-    dist_list,grad_list,t_list = [],[],[]
-    for w in w_list:
-        dist,grad,t = curve.sdf_batch(p,w)
-        dist_list.append(dist)
-        grad_list.append(grad)
-        t_list.append(t)
-        curve_grad = curve.quadractic_bezier_curve_grad_batch(t,w)*0.1
-        # Compute barrier function
-        barrier = 1.0/(1 + lambda_dist*dist+1e-6)
-        # Combine trajectory and gradient fields
-        vec = curve_grad * barrier.unsqueeze(-1) + grad * (1-barrier).unsqueeze(-1)
-        vec = torch.nn.functional.normalize(vec,dim=-1)
-        p_next = p + vec*step_size
-        p_next_list.append(p_next)
-        vec_field_list.append(vec)
+    w_decode = torch.cat( [curve.decode_w(w) for w in w_list],dim=0)
+    dist,grad,tmin,_,curve_grad = curve.multi_traj_sdf_batch(p,w_list)
+    curve_grad = curve_grad*0.1
+    # Compute barrier function
+    barrier = 1.0/(1 + lambda_dist*dist+1e-6)
+    # Combine trajectory and gradient fields
+    vec = curve_grad * barrier.unsqueeze(-1) + grad * (1-barrier).unsqueeze(-1)
+    vec = torch.nn.functional.normalize(vec,dim=-1)
+    p_next = p + vec*step_size
 
-    dist,dist_idx = torch.min(torch.stack(dist_list,dim=0),dim=0)
-    p_next = torch.stack(p_next_list,dim=0)
-    p_next = p_next[dist_idx,torch.arange(len(p)),:]
-    vec_field = torch.stack(vec_field_list,dim=0)
-    vec_field = vec_field[dist_idx,torch.arange(len(p)),:]
-    vec_field = torch.nn.functional.normalize(vec_field,dim=-1)
-    return p_next, vec_field
+    return p_next, vec
