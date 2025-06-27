@@ -55,7 +55,6 @@ if __name__ == "__main__":
         y = torch.linspace(-0.5,1.5, 50)
         x, y = torch.meshgrid(x, y)
         p = torch.stack([x.flatten(), y.flatten()], dim=1).to(device)
-        print(p.shape,len(w_list))
         # Create figure for plotting
 
         # Distance Field
