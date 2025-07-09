@@ -522,17 +522,21 @@ SPDX-License-Identifier: MIT
             DistanceToCurve infos = getDistanceToCurve(uv, p0, p1, p2, p3, p4);
     
             // Get curve gradient tangent based on closest segment
-            vec2 curveGradientTangent = getCurveGradientTangent(infos.p0, infos.p1, infos.p2, infos.t);
+            float t_segment = infos.t;
+            if (t_segment > 1.0) {
+                t_segment = t_segment - 1.0;
+            }
+            vec2 curveGradientTangent = getCurveGradientTangent(infos.p0, infos.p1, infos.p2, t_segment);
 
             // Get dynamical system gradient (distance gradient)
-            vec2 closestPoint = evaluateBezier(infos.p0, infos.p1, infos.p2, infos.t);
+            vec2 closestPoint = evaluateBezier(infos.p0, infos.p1, infos.p2, t_segment);
             vec2 dynGradient = normalize(closestPoint - uv);
 
             // Check if we're at the end point
             float distToEnd = length(uv - p4);
 
             // Calculate beta and alpha based on distance
-            float beta = 1.0 / (1.0 + lambda * infos.distance);
+            float beta = 1.0 / (1.0 + (lambda + 0.0000001 * exp(infos.t*10.0)) * infos.distance);
             float alpha = 1.0 - beta;
 
             // If we're very close to the end point, only use distance gradient
@@ -1012,7 +1016,7 @@ SPDX-License-Identifier: MIT
                     );
 
                 // Calculate beta and alpha based on distance
-                let beta = 1.0 / (1.0 + lambda * minDist);
+                let beta = 1.0 / (1.0 + (lambda + 0.0000001 * Math.exp((closestT + closestSegment) * 10)) * minDist);
                 let alpha = 1.0 - beta;
 
                 // If we're very close to the end point (Q5), only use distance gradient
