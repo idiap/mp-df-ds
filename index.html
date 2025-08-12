@@ -966,6 +966,8 @@ SPDX-License-Identifier: MIT
                 let minDist = Infinity;
                 let closestT = 0;
                 let closestSegment = 0;
+                let firstSegmentMinDist = Infinity;
+                let firstSegmentT = 0;
 
                 // Check first segment
                 for (let t = 0; t <= 1; t += 0.001) {
@@ -976,6 +978,11 @@ SPDX-License-Identifier: MIT
                         Math.pow(curveX - currentPoint.x, 2) +
                         Math.pow(curveY - currentPoint.y, 2)
                     );
+
+                    if (dist < firstSegmentMinDist) {
+                        firstSegmentMinDist = dist;
+                        firstSegmentT = t;
+                    }
 
                     if (dist < minDist) {
                         minDist = dist;
@@ -998,6 +1005,25 @@ SPDX-License-Identifier: MIT
                         minDist = dist;
                         closestT = t;
                         closestSegment = 1;
+                    }
+                }
+
+                // If closest point on first segment is near the junction (t > 0.8) and 
+                // second segment distance is similar, prefer second segment for flow continuation
+                if (closestSegment === 0 && firstSegmentT > 0.99) {
+                    // Check if second segment has similar distance at its start
+                    const secondStartX = controlPoints[2].x;
+                    const secondStartY = controlPoints[2].y;
+                    const distToSecondStart = Math.sqrt(
+                        Math.pow(secondStartX - currentPoint.x, 2) +
+                        Math.pow(secondStartY - currentPoint.y, 2)
+                    );
+                    
+                    // If distances are similar, prefer second segment to continue flow
+                    if (Math.abs(minDist - distToSecondStart) < minDist * 0.1) {
+                        closestSegment = 1;
+                        closestT = 0.0;
+                        minDist = distToSecondStart;
                     }
                 }
 
