@@ -49,11 +49,15 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 If you find this work useful in your research, please cite:
 
 ```bibtex
-@article{Li25arXiv,
-	author={Li, Y. and Calinon, S.},
-	title={From Movement Primitives to Distance Fields to Dynamical Systems},
-	journal={arXiv:2504.09705},
-	year={2025}
+@article{Li25RAL,
+    author={Li, Y. and Calinon, S.},
+    title={From Movement Primitives to Distance Fields to Dynamical Systems},
+    journal={{IEEE} Robotics and Automation Letters ({RA-L})},
+    year={2025},
+    volume={10}, 
+    number={9},
+    pages={9550--9556},
+    doi={10.1109/LRA.2025.3595073}
 }
 ```
 
