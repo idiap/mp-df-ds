@@ -3,7 +3,7 @@
 [📄 Paper](https://arxiv.org/pdf/2504.09705) | [🌐 Interactive Webpage](https://idiap.github.io/mp-df-ds/)
 
 ---
-**A simple module to represent trajectories using quadratic splines, enabling smooth transitions from movement primitives to distance fields and dynamical systems—all with analytical gradients and PyTorch support.**
+**A simple module to represent trajectories using quadratic splines, enabling smooth transitions from movement primitives to distance fields and dynamical systems—all with analytical gradients and PyTorch/JAX support.**
 
 ---
 
@@ -22,6 +22,7 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 ## Key Features
 
 - ✅ Minimal dependencies (built with **PyTorch**, no heavy libraries needed)
+- ✅ Optional **JAX** implementation with matching API
 - ✅ Fully vectorized and **parallelizable**
 - ✅ Supports **gradient-based learning**, **optimization**, and **control**
 - ✅ **Efficient** computation
@@ -31,6 +32,7 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 - pytorch
 - numpy
 - matplotlib
+- jax (optional, for JAX version)
 
 ## Project Structure
 
@@ -38,7 +40,9 @@ by representing it as a series of **concatenated quadratic splines**. Thanks to 
 |------|-------------|
 | `data` | Trajectories for testing|
 | `quadratic_spline.py` | Core implementation of spline representation and gradient computation |
+| `quadratic_spline_jax.py` | JAX version of the core spline implementation (API aligned with PyTorch version) |
 | `run_mp_df_ds.py` | Example: Convert a quadratic spline into distance field, and dynamical system |
+| `run_mp_df_ds_jax.py` | JAX example mirroring `run_mp_df_ds.py` |
 | `run_single_traj.py` | Similar to above, but for a trajectory that represented using discrete points|
 | `run_multiple_traj.py` | Combine and fuse multiple trajectories |
 | `run_LASA.py` | Run experiments on the LASA dataset (requires [pylasadataset](https://github.com/justagist/pyLasaDataset)) 
