@@ -4,6 +4,7 @@
 # Contributor: Yiming Li <yiming.li@idiap.ch>
 # -----------------------------------------------------------------------------
 
+import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,16 +13,16 @@ from quadratic_spline_jax import QuadraticSpline, dynamical_system_single_step
 
 
 if __name__ == "__main__":
-    device = "cpu"
-    curve = QuadraticSpline(nbFct=3, nbSeg=2, device=device)
+    print("Construct spline...")
+    curve = QuadraticSpline(nbFct=3, nbSeg=2, device="cpu")
 
-    # explicitely set control points
+    # explicitly set control points
     w_b = jnp.array(
         [8.303, 8.592, -10.000, 8.286, 0.500, -1.233, -10.000, -6.137],
         dtype=jnp.float32,
     )
 
-    N = 100
+    N = 40 #Number of points in the trajectory
     t = jnp.linspace(0, 1, N, dtype=jnp.float32)
     Psi, dPsi, phi = curve.computePsiList1D(t)
     trajectory = (Psi @ w_b).reshape(N, -1)
@@ -29,10 +30,12 @@ if __name__ == "__main__":
     w_no_constraint = curve.decode_w(w_b).reshape(-1, 2)
 
     # Create a grid for SDF visualization
+    print("Create grid for SDF visualization...")
+    sz = 40 #size of the grid
     x_min, x_max = trajectory[:, 0].min() - 5.0, trajectory[:, 0].max() + 5.0
     y_min, y_max = trajectory[:, 1].min() - 5.0, trajectory[:, 1].max() + 5.0
-    x = jnp.linspace(jnp.minimum(x_min, y_min), jnp.minimum(x_max, y_max), 50)
-    y = jnp.linspace(jnp.minimum(x_min, y_min), jnp.minimum(x_max, y_max), 50)
+    x = jnp.linspace(jnp.minimum(x_min, y_min), jnp.minimum(x_max, y_max), sz)
+    y = jnp.linspace(jnp.minimum(x_min, y_min), jnp.minimum(x_max, y_max), sz)
     x, y = jnp.meshgrid(x, y, indexing="ij")
     p = jnp.stack([x.reshape(-1), y.reshape(-1)], axis=1)
 
@@ -40,10 +43,12 @@ if __name__ == "__main__":
     dist_np, grad_np = np.asarray(dist), np.asarray(grad)
 
     # Dynamical system
+    print("Compute vector field...")
     p_next, vec_field = dynamical_system_single_step(curve, p, w_b)
     vec_field_np = np.asarray(vec_field)
 
     # Create figure for plotting
+    print("Plot result...")
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     x_low = float(jnp.minimum(x_min, y_min))
     x_high = float(jnp.minimum(x_max, y_max))
@@ -75,7 +80,7 @@ if __name__ == "__main__":
     axes[1].contourf(
         x_np,
         y_np,
-        dist_np.reshape(50, 50),
+        dist_np.reshape(sz, sz),
         levels=np.linspace(0.0, np.max(dist_np), 7),
         cmap="coolwarm",
     )
@@ -130,19 +135,23 @@ if __name__ == "__main__":
     axes[2].streamplot(
         x_np[::3, ::3].T,
         y_np[::3, ::3].T,
-        vec_field_np[:, 0].reshape(50, 50)[::3, ::3].T,
-        vec_field_np[:, 1].reshape(50, 50)[::3, ::3].T,
+        vec_field_np[:, 0].reshape(sz, sz)[::3, ::3].T,
+        vec_field_np[:, 1].reshape(sz, sz)[::3, ::3].T,
         color="darkgray",
         linewidth=1,
         density=1.0,
     )
 
-    p_list = []
-    for _ in range(500):
-        p_next, _ = dynamical_system_single_step(curve, pts, w_b)
-        p_list.append(p_next)
-        pts = p_next
-    p_list = jnp.stack(p_list, axis=0).transpose(1, 0, 2)
+    @jax.jit
+    def run_simulation(pts_init, w):
+        def scan_step(pts, _):
+            p_next, _ = dynamical_system_single_step(curve, pts, w)
+            return p_next, p_next
+
+        _, p_list = jax.lax.scan(scan_step, pts_init, None, length=500)
+        return p_list
+
+    p_list = run_simulation(pts, w_b).transpose(1, 0, 2)
 
     for points in np.asarray(p_list):
         axes[2].plot(points[:, 0], points[:, 1], "-", linewidth=2, color="red")

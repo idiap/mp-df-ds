@@ -5,7 +5,9 @@
 # -----------------------------------------------------------------------------
 
 import math
+from functools import partial
 
+import jax
 import jax.numpy as jnp
 
 
@@ -71,35 +73,36 @@ class QuadraticSpline:
         self.C = C
         return B @ C
 
+    @partial(jax.jit, static_argnums=(0,))
     def computePsiList1D(self, t):
         t = jnp.asarray(t, dtype=self.dtype)
         p_float = jnp.arange(self.nbFct, dtype=self.dtype)
         p_int = jnp.arange(self.nbFct, dtype=jnp.int32)
 
-        phi = jnp.zeros((t.shape[0], self.BC.shape[1]), dtype=self.dtype)
-        dphi = jnp.zeros_like(phi)
+        # Fully vectorised over all N timesteps at once — no Python loop.
+        tt = jnp.mod(t, 1.0 / self.nbSeg) * self.nbSeg               # (N,)
+        idx_float = jnp.round(t * self.nbSeg - tt)                    # (N,)
+        idx = idx_float.astype(jnp.int32)                              # (N,)
 
-        for k in range(t.shape[0]):
-            tt = jnp.mod(t[k], 1.0 / self.nbSeg) * self.nbSeg
-            idx_float = jnp.round(t[k] * self.nbSeg - tt)
-            idx = idx_float.astype(jnp.int32)
+        tt = jnp.where(idx < 0, tt + idx.astype(self.dtype), tt)
+        idx = jnp.where(idx < 0, 0, idx)
+        tt = jnp.where(
+            idx > (self.nbSeg - 1),
+            tt + (idx - (self.nbSeg - 1)).astype(self.dtype),
+            tt,
+        )
+        idx = jnp.where(idx > (self.nbSeg - 1), self.nbSeg - 1, idx)
 
-            tt = jnp.where(idx < 0, tt + idx.astype(self.dtype), tt)
-            idx = jnp.where(idx < 0, 0, idx)
-            tt = jnp.where(
-                idx > (self.nbSeg - 1),
-                tt + (idx - (self.nbSeg - 1)).astype(self.dtype),
-                tt,
-            )
-            idx = jnp.where(idx > (self.nbSeg - 1), self.nbSeg - 1, idx)
+        T = tt[:, None] ** p_float[None, :]                            # (N, nbFct)
+        dT_vals = p_float[1:] * (tt[:, None] ** (p_float[1:] - 1)) * self.nbSeg  # (N, nbFct-1)
+        dT = jnp.concatenate(
+            [jnp.zeros((t.shape[0], 1), dtype=self.dtype), dT_vals], axis=1
+        )                                                               # (N, nbFct)
 
-            T = tt**p_float
-            dT = jnp.zeros((self.nbFct,), dtype=self.dtype)
-            dT = dT.at[1:].set(p_float[1:] * (tt ** (p_float[1:] - 1)) * self.nbSeg)
-            idl = (idx * self.nbFct + p_int).astype(jnp.int32)
-
-            phi = phi.at[k, :].set(T @ self.BC[idl, :])
-            dphi = dphi.at[k, :].set(dT @ self.BC[idl, :])
+        idl = (idx[:, None] * self.nbFct + p_int[None, :]).astype(jnp.int32)  # (N, nbFct)
+        BC_sel = self.BC[idl]                                          # (N, nbFct, BC.shape[1])
+        phi = jnp.einsum("nf,nfd->nd", T, BC_sel)                     # (N, BC.shape[1])
+        dphi = jnp.einsum("nf,nfd->nd", dT, BC_sel)                   # (N, BC.shape[1])
 
         Psi = jnp.kron(phi, jnp.eye(self.nbDim, dtype=self.dtype))
         dPsi = jnp.kron(dphi, jnp.eye(self.nbDim, dtype=self.dtype))
@@ -311,6 +314,7 @@ class QuadraticSpline:
         t = t_stacked[dist_idx, jnp.arange(p.shape[0])]
         return dist, grad, t
 
+    @partial(jax.jit, static_argnums=(0,))
     def sdf_batch(self, p, w):
         p = jnp.asarray(p, dtype=self.dtype)
         w_decode = self.decode_w(w)
@@ -372,6 +376,7 @@ class QuadraticSpline:
         return t_continuous
 
 
+@partial(jax.jit, static_argnums=(0,))
 def dynamical_system_single_step(
     curve, p, w, lambda_dist=0.5, step_size=0.1, dist_threshold=0.0
 ):
