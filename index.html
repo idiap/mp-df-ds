@@ -101,6 +101,26 @@ SPDX-License-Identifier: MIT
         .plot-description.spaced {
             margin-top: 75px;  /* Increased margin to match height of other plots */
         }
+        .citation-section {
+            margin-top: 40px;
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .citation-section pre {
+            width: 100%;
+            box-sizing: border-box;
+            background: white;
+            border-radius: 10px;
+            padding: 15px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.5;
+            text-align: left;
+        }
         .gif-section {
             margin-top: 40px;
             width: 100%;
@@ -1836,6 +1856,20 @@ SPDX-License-Identifier: MIT
                 <!-- <p>Multiple trajectories converging to the equilibrium point along the curve.</p> -->
             </div>
         </div>
+    </div>
+    <div class="citation-section">
+        <h2>Citation</h2>
+        <p>If you find this work useful, please cite:</p>
+<pre><code>@article{Li25RAL,
+    author={Li, Y. and Calinon, S.},
+    title={From Movement Primitives to Distance Fields to Dynamical Systems},
+    journal={{IEEE} Robotics and Automation Letters ({RA-L})},
+    year={2025},
+    volume={10},
+    number={9},
+    pages={9550--9556},
+    doi={10.1109/LRA.2025.3595073}
+}</code></pre>
     </div>
 </body>
 </html>
